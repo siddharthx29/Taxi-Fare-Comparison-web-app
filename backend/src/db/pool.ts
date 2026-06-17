@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgrespassword@localhost:5432/ridecompare';
+const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/ridecompare';
 
 export const pool = new Pool({
   connectionString,
@@ -12,24 +12,26 @@ export const pool = new Pool({
     : false
 });
 
-export let isFallbackMode = false;
-
 // Retry database connection on initial load
-export async function connectWithRetry(retries = 3, delay = 2000): Promise<Pool | null> {
+export async function connectWithRetry(retries = 5, delay = 2000): Promise<Pool> {
   for (let i = 0; i < retries; i++) {
     try {
       const client = await pool.connect();
       console.log('Successfully connected to PostgreSQL database!');
       client.release();
-      isFallbackMode = false;
       return pool;
-    } catch (err) {
-      console.error(`Database connection attempt ${i + 1} failed. Retrying in ${delay / 1000}s...`);
-      await new Promise(res => setTimeout(res, delay));
+    } catch (err: any) {
+      console.error(`❌ Database connection attempt ${i + 1} of ${retries} failed.`);
+      console.error(`Error details: ${err.message || err}`);
+      if (err.stack) {
+        console.error(err.stack);
+      }
+      if (i < retries - 1) {
+        console.log(`Retrying in ${delay / 1000}s...`);
+        await new Promise(res => setTimeout(res, delay));
+      }
     }
   }
-  console.warn('⚠️ WARNING: Failed to connect to PostgreSQL database. Switching to InMemory Fallback Mode for Searches & Analytics.');
-  isFallbackMode = true;
-  return null;
+  throw new Error(`Failed to establish database connection after ${retries} attempts.`);
 }
 

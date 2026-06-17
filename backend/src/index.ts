@@ -131,8 +131,9 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`RideCompare backend listening on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`);
     });
-  } catch (error) {
-    console.error('Fatal error starting RideCompare server:', error);
+  } catch (error: any) {
+    console.error('❌ FATAL: Database connection could not be established. Server startup aborted.');
+    console.error(error.message || error);
     process.exit(1);
   }
 }
