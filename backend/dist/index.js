@@ -11,6 +11,7 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const api_1 = __importDefault(require("./routes/api"));
 const pool_1 = require("./db/pool");
+const setup_1 = require("./db/setup");
 // Load environment variables from .env file
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -152,13 +153,15 @@ app.use((err, req, res, next) => {
 // Launch server after connecting to PostgreSQL DB
 async function startServer() {
     try {
+        // Run database migrations before starting the application
+        await (0, setup_1.setupDatabase)(false);
         await (0, pool_1.connectWithRetry)();
         app.listen(PORT, () => {
             console.log(`RideCompare backend listening on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`);
         });
     }
     catch (error) {
-        console.error('❌ FATAL: Database connection could not be established. Server startup aborted.');
+        console.error('❌ FATAL: Database connection could not be established or migrations failed. Server startup aborted.');
         console.error(error.message || error);
         process.exit(1);
     }

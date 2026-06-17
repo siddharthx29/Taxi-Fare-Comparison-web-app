@@ -28,12 +28,11 @@ function getDatabaseName(url: string): string {
 }
 
 async function checkPostgresAvailability(retries = 10, delay = 2000): Promise<boolean> {
-  const systemDbUrl = getSystemDbUrl(dbUrl);
   const parsedUrl = new URL(dbUrl);
   console.log(`Checking PostgreSQL availability at ${parsedUrl.hostname}:${parsedUrl.port || '5432'}...`);
   
   for (let i = 0; i < retries; i++) {
-    const client = new Client({ connectionString: systemDbUrl });
+    const client = new Client({ connectionString: dbUrl });
     try {
       await client.connect();
       await client.end();
@@ -148,7 +147,7 @@ async function runMigrations() {
   }
 }
 
-async function main() {
+export async function setupDatabase(exitOnCompletion = false) {
   console.log('====================================================');
   console.log('         RideCompare Database Setup & Migrator       ');
   console.log('====================================================');
@@ -156,23 +155,43 @@ async function main() {
   try {
     const isAvailable = await checkPostgresAvailability(10, 2000);
     if (!isAvailable) {
-      console.error('❌ FATAL: PostgreSQL server is offline or unreachable on port 5432.');
-      console.error('Please verify PostgreSQL is running locally before launching RideCompare.');
-      process.exit(1);
+      console.error('❌ FATAL: PostgreSQL server is offline or unreachable.');
+      console.error('Please verify PostgreSQL is running before launching RideCompare.');
+      if (exitOnCompletion) {
+        process.exit(1);
+      } else {
+        throw new Error('PostgreSQL server is offline or unreachable.');
+      }
     }
 
-    await ensureDatabaseExists();
+    try {
+      await ensureDatabaseExists();
+    } catch (dbErr: any) {
+      console.warn('⚠️ Could not verify or create target database (this is expected on managed hostings like Render). Proceeding to run migrations directly on target database...');
+    }
+
     await runMigrations();
     
     console.log('====================================================');
     console.log('✅ Database setup and migrations completed successfully!');
     console.log('====================================================');
-    process.exit(0);
+    if (exitOnCompletion) process.exit(0);
   } catch (err: any) {
     console.error('❌ FATAL: Database setup failed:');
     console.error(err.stack || err.message || err);
-    process.exit(1);
+    if (exitOnCompletion) {
+      process.exit(1);
+    } else {
+      throw err;
+    }
   }
 }
 
-main();
+// Run automatically if this script is executed directly via CLI
+const isDirectRun = require.main === module || 
+  (process.argv[1] && (process.argv[1].endsWith('setup.ts') || process.argv[1].endsWith('setup.js')));
+
+if (isDirectRun) {
+  setupDatabase(true);
+}
+
