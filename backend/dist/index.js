@@ -1,0 +1,128 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const cors_1 = __importDefault(require("cors"));
+const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
+const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+const api_1 = __importDefault(require("./routes/api"));
+const pool_1 = require("./db/pool");
+// Load environment variables from .env file
+dotenv_1.default.config();
+const app = (0, express_1.default)();
+const PORT = process.env.PORT || 5000;
+// Setup Middleware
+app.use((0, cors_1.default)({
+    origin: '*', // Allows access from any client, suitable for Docker orchestrations
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express_1.default.json());
+// Express rate limiter to secure backend routes from abuse
+const apiLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests from this IP. Please try again after 15 minutes.' }
+});
+// Apply rate limiter to API routes
+app.use('/api', apiLimiter);
+// Bind API Routes
+app.use('/api', api_1.default);
+/**
+ * Formats the server uptime into a human-readable string (hh:mm:ss)
+ */
+function getFormattedUptime() {
+    const uptimeSeconds = process.uptime();
+    const hrs = Math.floor(uptimeSeconds / 3600);
+    const mins = Math.floor((uptimeSeconds % 3600) / 60);
+    const secs = Math.floor(uptimeSeconds % 60);
+    const pad = (num) => num.toString().padStart(2, '0');
+    return `${pad(hrs)}h ${pad(mins)}m ${pad(secs)}s`;
+}
+// GET /health - Enhanced health-check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'healthy',
+        uptime: getFormattedUptime(),
+        timestamp: new Date().toISOString()
+    });
+});
+// Resolve the path to the React frontend production build if it exists.
+// Checks multiple potential locations to ensure compatibility with dev, production, and Docker environments.
+const FRONTEND_DIST_PATH = process.env.FRONTEND_DIST_PATH || [
+    path_1.default.join(__dirname, '../../frontend/dist'),
+    path_1.default.join(process.cwd(), '../frontend/dist'),
+    path_1.default.join(process.cwd(), 'frontend/dist'),
+    path_1.default.join(__dirname, '../frontend/dist')
+].find(p => fs_1.default.existsSync(p)) || '';
+if (FRONTEND_DIST_PATH) {
+    console.log(`[Static Files] Serving production React build from: ${FRONTEND_DIST_PATH}`);
+    // Serve static files from React build directory
+    app.use(express_1.default.static(FRONTEND_DIST_PATH));
+    // Serve index.html specifically for the root URL
+    app.get('/', (req, res, next) => {
+        const indexPath = path_1.default.join(FRONTEND_DIST_PATH, 'index.html');
+        if (fs_1.default.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+        }
+        else {
+            next();
+        }
+    });
+    // Client-side routing wildcard: fallback to index.html for SPA router support (excluding API and health routes)
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api') || req.path.startsWith('/health')) {
+            return next();
+        }
+        const indexPath = path_1.default.join(FRONTEND_DIST_PATH, 'index.html');
+        if (fs_1.default.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+        }
+        else {
+            next();
+        }
+    });
+}
+else {
+    console.log('[Static Files] React frontend production build directory not found. Root path will serve API status JSON.');
+    // GET / - Root route displays professional JSON status when React frontend dist is not built
+    app.get('/', (req, res) => {
+        res.status(200).json({
+            status: "success",
+            message: "RideCompare API is running successfully",
+            version: "1.0.0"
+        });
+    });
+}
+// Global Error Handler Middleware using TypeScript best practices
+app.use((err, req, res, next) => {
+    console.error('Unhandled Server Error:', err);
+    const statusCode = err.status || err.statusCode || 500;
+    const message = err.message || 'An unexpected database or server error occurred';
+    res.status(statusCode).json({
+        status: 'error',
+        message: message,
+        // Exclude stack trace in production to prevent leaking sensitive internals
+        ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+    });
+});
+// Launch server after connecting to PostgreSQL DB
+async function startServer() {
+    try {
+        await (0, pool_1.connectWithRetry)();
+        app.listen(PORT, () => {
+            console.log(`RideCompare backend listening on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`);
+        });
+    }
+    catch (error) {
+        console.error('Fatal error starting RideCompare server:', error);
+        process.exit(1);
+    }
+}
+startServer();

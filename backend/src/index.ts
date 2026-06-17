@@ -2,9 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
 import apiRouter from './routes/api';
 import { connectWithRetry } from './db/pool';
 
+// Load environment variables from .env file
 dotenv.config();
 
 const app = express();
@@ -31,18 +34,94 @@ const apiLimiter = rateLimit({
 // Apply rate limiter to API routes
 app.use('/api', apiLimiter);
 
-// Bind Routes
+// Bind API Routes
 app.use('/api', apiRouter);
 
-// Base Health Check
+/**
+ * Formats the server uptime into a human-readable string (hh:mm:ss)
+ */
+function getFormattedUptime(): string {
+  const uptimeSeconds = process.uptime();
+  const hrs = Math.floor(uptimeSeconds / 3600);
+  const mins = Math.floor((uptimeSeconds % 3600) / 60);
+  const secs = Math.floor(uptimeSeconds % 60);
+  
+  const pad = (num: number) => num.toString().padStart(2, '0');
+  return `${pad(hrs)}h ${pad(mins)}m ${pad(secs)}s`;
+}
+
+// GET /health - Enhanced health-check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date() });
+  res.status(200).json({
+    status: 'healthy',
+    uptime: getFormattedUptime(),
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Global Error Handler
+// Resolve the path to the React frontend production build if it exists.
+// Checks multiple potential locations to ensure compatibility with dev, production, and Docker environments.
+const FRONTEND_DIST_PATH = process.env.FRONTEND_DIST_PATH || [
+  path.join(__dirname, '../../frontend/dist'),
+  path.join(process.cwd(), '../frontend/dist'),
+  path.join(process.cwd(), 'frontend/dist'),
+  path.join(__dirname, '../frontend/dist')
+].find(p => fs.existsSync(p)) || '';
+
+if (FRONTEND_DIST_PATH) {
+  console.log(`[Static Files] Serving production React build from: ${FRONTEND_DIST_PATH}`);
+  
+  // Serve static files from React build directory
+  app.use(express.static(FRONTEND_DIST_PATH));
+
+  // Serve index.html specifically for the root URL
+  app.get('/', (req, res, next) => {
+    const indexPath = path.join(FRONTEND_DIST_PATH, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      next();
+    }
+  });
+
+  // Client-side routing wildcard: fallback to index.html for SPA router support (excluding API and health routes)
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/health')) {
+      return next();
+    }
+    const indexPath = path.join(FRONTEND_DIST_PATH, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      next();
+    }
+  });
+} else {
+  console.log('[Static Files] React frontend production build directory not found. Root path will serve API status JSON.');
+  
+  // GET / - Root route displays professional JSON status when React frontend dist is not built
+  app.get('/', (req, res) => {
+    res.status(200).json({
+      status: "success",
+      message: "RideCompare API is running successfully",
+      version: "1.0.0"
+    });
+  });
+}
+
+// Global Error Handler Middleware using TypeScript best practices
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Unhandled Server Error:', err);
-  res.status(500).json({ error: 'An unexpected database or server error occurred' });
+  
+  const statusCode = err.status || err.statusCode || 500;
+  const message = err.message || 'An unexpected database or server error occurred';
+  
+  res.status(statusCode).json({
+    status: 'error',
+    message: message,
+    // Exclude stack trace in production to prevent leaking sensitive internals
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  });
 });
 
 // Launch server after connecting to PostgreSQL DB
@@ -59,3 +138,4 @@ async function startServer() {
 }
 
 startServer();
+
