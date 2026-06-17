@@ -60,8 +60,11 @@ router.get('/geocode', async (req: Request, res: Response) => {
 
     return res.json(data);
   } catch (error: any) {
-    console.error('Geocoding error:', error);
-    return res.status(500).json({ error: 'Failed to retrieve geocoding locations' });
+    console.error(`[Geocoding Error] Failed autocomplete for query "${query}":`, error);
+    if (error instanceof Error) {
+      console.error(error.stack);
+    }
+    return res.status(500).json({ error: `Failed to retrieve geocoding locations: ${error.message || error}` });
   }
 });
 
@@ -182,8 +185,11 @@ router.get('/route', async (req: Request, res: Response) => {
       comparison
     });
   } catch (error: any) {
-    console.error('Failed to log search or compile fares:', error);
-    return res.status(500).json({ error: 'Failed to process comparison calculations' });
+    console.error(`[Route Comparison Error] Failed calculating fares for start "${start}", end "${end}", sourceName "${sourceName}", destName "${destName}":`, error);
+    if (error instanceof Error) {
+      console.error(error.stack);
+    }
+    return res.status(500).json({ error: `Failed to process comparison calculations: ${error.message || error}` });
   }
 });
 
@@ -227,8 +233,11 @@ router.post('/redirect', async (req: Request, res: Response) => {
 
     return res.json({ success: true });
   } catch (error: any) {
-    console.error('Booking redirect analytics error:', error);
-    return res.status(500).json({ error: 'Failed to record analytics click redirect' });
+    console.error(`[Booking Redirect Error] Failed recording click for searchId "${searchId}", provider "${provider}", fare "${fare}":`, error);
+    if (error instanceof Error) {
+      console.error(error.stack);
+    }
+    return res.status(500).json({ error: `Failed to record analytics click redirect: ${error.message || error}` });
   }
 });
 
@@ -280,8 +289,11 @@ router.get('/analytics', async (req: Request, res: Response) => {
       dailyTrends
     });
   } catch (error: any) {
-    console.error('Failed to get analytics dashboard stats:', error);
-    return res.status(500).json({ error: 'Failed to retrieve analytics' });
+    console.error('[Analytics Error] Failed fetching aggregated stats:', error);
+    if (error instanceof Error) {
+      console.error(error.stack);
+    }
+    return res.status(500).json({ error: `Failed to retrieve analytics: ${error.message || error}` });
   }
 });
 

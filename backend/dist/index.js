@@ -16,12 +16,43 @@ dotenv_1.default.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
 // Setup Middleware
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : [
+        'https://taxi-fare-comparison-web-app.onrender.com',
+        'http://localhost:5173',
+        'http://localhost:8080'
+    ];
 app.use((0, cors_1.default)({
-    origin: '*', // Allows access from any client, suitable for Docker orchestrations
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        }
+        else {
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
 app.use(express_1.default.json());
+// Request/Response Logger Middleware
+app.use((req, res, next) => {
+    const start = Date.now();
+    console.log(`[Incoming Request] ${req.method} ${req.originalUrl}`);
+    if (req.query && Object.keys(req.query).length > 0) {
+        console.log(`[Query Parameters]`, req.query);
+    }
+    if (req.body && Object.keys(req.body).length > 0) {
+        console.log(`[Request Payload]`, req.body);
+    }
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`[Response Status] ${req.method} ${req.originalUrl} | Status: ${res.statusCode} | Duration: ${duration}ms`);
+    });
+    next();
+});
 // Express rate limiter to secure backend routes from abuse
 const apiLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -102,7 +133,13 @@ else {
 }
 // Global Error Handler Middleware using TypeScript best practices
 app.use((err, req, res, next) => {
-    console.error('Unhandled Server Error:', err);
+    console.error(`[Error Log] Unhandled error during ${req.method} ${req.originalUrl}:`);
+    if (err instanceof Error) {
+        console.error(err.stack);
+    }
+    else {
+        console.error(err);
+    }
     const statusCode = err.status || err.statusCode || 500;
     const message = err.message || 'An unexpected database or server error occurred';
     res.status(statusCode).json({

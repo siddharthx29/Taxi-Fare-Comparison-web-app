@@ -47,8 +47,11 @@ router.get('/geocode', async (req, res) => {
         return res.json(data);
     }
     catch (error) {
-        console.error('Geocoding error:', error);
-        return res.status(500).json({ error: 'Failed to retrieve geocoding locations' });
+        console.error(`[Geocoding Error] Failed autocomplete for query "${query}":`, error);
+        if (error instanceof Error) {
+            console.error(error.stack);
+        }
+        return res.status(500).json({ error: `Failed to retrieve geocoding locations: ${error.message || error}` });
     }
 });
 // Route Calculation & Comparison Endpoint (Proxies OSRM + pricing calculations)
@@ -149,8 +152,11 @@ router.get('/route', async (req, res) => {
         });
     }
     catch (error) {
-        console.error('Failed to log search or compile fares:', error);
-        return res.status(500).json({ error: 'Failed to process comparison calculations' });
+        console.error(`[Route Comparison Error] Failed calculating fares for start "${start}", end "${end}", sourceName "${sourceName}", destName "${destName}":`, error);
+        if (error instanceof Error) {
+            console.error(error.stack);
+        }
+        return res.status(500).json({ error: `Failed to process comparison calculations: ${error.message || error}` });
     }
 });
 // Logs selected redirect options for user booking click
@@ -187,8 +193,11 @@ router.post('/redirect', async (req, res) => {
         return res.json({ success: true });
     }
     catch (error) {
-        console.error('Booking redirect analytics error:', error);
-        return res.status(500).json({ error: 'Failed to record analytics click redirect' });
+        console.error(`[Booking Redirect Error] Failed recording click for searchId "${searchId}", provider "${provider}", fare "${fare}":`, error);
+        if (error instanceof Error) {
+            console.error(error.stack);
+        }
+        return res.status(500).json({ error: `Failed to record analytics click redirect: ${error.message || error}` });
     }
 });
 // Retrieve aggregated Analytics Dashboard stats
@@ -235,8 +244,11 @@ router.get('/analytics', async (req, res) => {
         });
     }
     catch (error) {
-        console.error('Failed to get analytics dashboard stats:', error);
-        return res.status(500).json({ error: 'Failed to retrieve analytics' });
+        console.error('[Analytics Error] Failed fetching aggregated stats:', error);
+        if (error instanceof Error) {
+            console.error(error.stack);
+        }
+        return res.status(500).json({ error: `Failed to retrieve analytics: ${error.message || error}` });
     }
 });
 exports.default = router;

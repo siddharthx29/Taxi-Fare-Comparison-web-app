@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart3, TrendingUp, Users, PiggyBank, RefreshCw, Navigation, Award, AlertCircle } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 interface PopularRoute {
   source: string;
@@ -36,16 +37,12 @@ export const AnalyticsDashboard: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/analytics');
-      if (response.ok) {
-        const result = await response.json();
-        setData(result);
-      } else {
-        throw new Error('Failed to load database logs');
-      }
-    } catch (err) {
+      const response = await apiFetch('/api/analytics');
+      const result = await response.json();
+      setData(result);
+    } catch (err: any) {
       console.error('Failed fetching analytics:', err);
-      setError('Could not establish database connection. Please verify backend service.');
+      setError(err.message || 'Could not establish database connection. Please verify backend service.');
     } finally {
       setLoading(false);
     }

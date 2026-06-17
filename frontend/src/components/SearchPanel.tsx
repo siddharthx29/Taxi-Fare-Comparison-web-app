@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, Locate, ArrowUpDown, Search, Loader2, AlertCircle } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 interface LocationInfo {
   label: string;
@@ -109,18 +110,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         console.log(`[Autocomplete Search] Fetching suggestions for: "${trimmedVal}"`);
       }
       
-      const response = await fetch(`/api/geocode?q=${encodeURIComponent(trimmedVal)}`);
-      
-      if (response.status === 429) {
-        setError('Geocoding rate limit reached. Please wait a moment.');
-        setSuggests([]);
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(`Server returned status ${response.status}`);
-      }
-
+      const response = await apiFetch(`/api/geocode?q=${encodeURIComponent(trimmedVal)}`);
       const data = await response.json();
       
       if (data.error) {
@@ -133,9 +123,9 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         setSuggests(data);
         setError(null);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed fetching address recommendations:', err);
-      setError('Connection failed. Please check backend service.');
+      setError(err.message || 'Connection failed. Please check backend service.');
       setSuggests([]);
     } finally {
       setLoading(false);

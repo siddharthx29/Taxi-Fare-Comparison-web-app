@@ -6,6 +6,7 @@ import { RideComparison } from './components/RideComparison';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { Sparkles, Download, X, Search, BarChart3, Home } from 'lucide-react';
 import type { ComparisonResult } from '../../backend/src/services/pricing';
+import { apiFetch } from './utils/api';
 
 interface LocationInfo {
   label: string;
@@ -99,11 +100,7 @@ function App() {
         console.log(`[Search Flow] Querying relative API: ${url}`);
       }
 
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error('Failed to resolve routing and fare options.');
-      }
-
+      const response = await apiFetch(url);
       const result = await response.json();
       if (import.meta.env.DEV) {
         console.log(`[Search Flow] Search calculation results:`, result);
@@ -111,9 +108,9 @@ function App() {
       setSearchId(result.searchId);
       setRouteGeometry(result.geometry);
       setComparison(result.comparison);
-    } catch (err) {
+    } catch (err: any) {
       console.error('[Search Flow] Routing error:', err);
-      alert('Routing server connection timed out. Using straight-line fallback approximations.');
+      alert(`Routing error: ${err.message || err}. Using straight-line fallback approximations.`);
     } finally {
       setLoading(false);
     }
@@ -124,7 +121,7 @@ function App() {
       if (import.meta.env.DEV) {
         console.log(`[Booking Redirect] User selected ${provider} (fare: ${fare}). Logging event...`);
       }
-      await fetch('/api/redirect', {
+      await apiFetch('/api/redirect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
