@@ -96,8 +96,7 @@ async function runMigrations() {
 
     const migrationsDir = path.join(__dirname, 'migrations');
     if (!fs.existsSync(migrationsDir)) {
-      console.warn(`⚠️ Migrations directory not found at: ${migrationsDir}. Skipping migrations.`);
-      return;
+      throw new Error(`Migrations directory not found at: ${migrationsDir}`);
     }
 
     const files = fs.readdirSync(migrationsDir)

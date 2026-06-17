@@ -90,8 +90,7 @@ async function runMigrations() {
     `);
         const migrationsDir = path_1.default.join(__dirname, 'migrations');
         if (!fs_1.default.existsSync(migrationsDir)) {
-            console.warn(`⚠️ Migrations directory not found at: ${migrationsDir}. Skipping migrations.`);
-            return;
+            throw new Error(`Migrations directory not found at: ${migrationsDir}`);
         }
         const files = fs_1.default.readdirSync(migrationsDir)
             .filter(file => file.endsWith('.sql'))
