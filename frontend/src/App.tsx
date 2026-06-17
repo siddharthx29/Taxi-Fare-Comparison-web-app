@@ -25,6 +25,10 @@ function App() {
   const [routeGeometry, setRouteGeometry] = useState<any | null>(null);
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
 
+  // Coords tracking for auto-routing cache triggers
+  const [lastSearchedSource, setLastSearchedSource] = useState<string>('');
+  const [lastSearchedDest, setLastSearchedDest] = useState<string>('');
+
   // PWA install states
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
@@ -50,6 +54,22 @@ function App() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
+  // Effect to automatically route when both pickup and destination locations are chosen
+  useEffect(() => {
+    if (sourceLoc && destLoc) {
+      const sourceKey = `${sourceLoc.lat},${sourceLoc.lng}`;
+      const destKey = `${destLoc.lat},${destLoc.lng}`;
+      if (lastSearchedSource !== sourceKey || lastSearchedDest !== destKey) {
+        if (import.meta.env.DEV) {
+          console.log(`[Auto-Route Effect] Both locations selected. Triggering query: "${sourceLoc.label}" -> "${destLoc.label}"`);
+        }
+        setLastSearchedSource(sourceKey);
+        setLastSearchedDest(destKey);
+        handleSearch(sourceLoc, destLoc);
+      }
+    }
+  }, [sourceLoc, destLoc, lastSearchedSource, lastSearchedDest]);
+
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
@@ -60,6 +80,9 @@ function App() {
   };
 
   const handleSearch = async (source: LocationInfo, dest: LocationInfo) => {
+    if (import.meta.env.DEV) {
+      console.log(`[Search Flow] Initiating route comparison search:`, { source, dest });
+    }
     setLoading(true);
     setSourceLoc(source);
     setDestLoc(dest);
@@ -70,7 +93,11 @@ function App() {
     try {
       const startParam = `${source.lng},${source.lat}`;
       const endParam = `${dest.lng},${dest.lat}`;
-      const url = `http://localhost:5000/api/route?start=${startParam}&end=${endParam}&sourceName=${encodeURIComponent(source.label)}&destName=${encodeURIComponent(dest.label)}`;
+      const url = `/api/route?start=${startParam}&end=${endParam}&sourceName=${encodeURIComponent(source.label)}&destName=${encodeURIComponent(dest.label)}`;
+
+      if (import.meta.env.DEV) {
+        console.log(`[Search Flow] Querying relative API: ${url}`);
+      }
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -78,11 +105,14 @@ function App() {
       }
 
       const result = await response.json();
+      if (import.meta.env.DEV) {
+        console.log(`[Search Flow] Search calculation results:`, result);
+      }
       setSearchId(result.searchId);
       setRouteGeometry(result.geometry);
       setComparison(result.comparison);
     } catch (err) {
-      console.error(err);
+      console.error('[Search Flow] Routing error:', err);
       alert('Routing server connection timed out. Using straight-line fallback approximations.');
     } finally {
       setLoading(false);
@@ -91,7 +121,10 @@ function App() {
 
   const handleBookingRedirect = async (provider: string, fare: number) => {
     try {
-      await fetch('http://localhost:5000/api/redirect', {
+      if (import.meta.env.DEV) {
+        console.log(`[Booking Redirect] User selected ${provider} (fare: ${fare}). Logging event...`);
+      }
+      await fetch('/api/redirect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -106,11 +139,16 @@ function App() {
   };
 
   const resetSearch = () => {
+    if (import.meta.env.DEV) {
+      console.log('[Search Flow] Resetting search terms and map view...');
+    }
     setSourceLoc(null);
     setDestLoc(null);
     setRouteGeometry(null);
     setComparison(null);
     setSearchId(null);
+    setLastSearchedSource('');
+    setLastSearchedDest('');
   };
 
   return (
@@ -187,7 +225,14 @@ function App() {
 
                   {/* Main Search Panel */}
                   <div className="max-w-[480px] shadow-xl shadow-slate-900/5 dark:shadow-black/20">
-                    <SearchPanel onSearch={handleSearch} loading={loading} />
+                    <SearchPanel
+                      selectedSource={sourceLoc}
+                      selectedDest={destLoc}
+                      onSourceSelect={setSourceLoc}
+                      onDestSelect={setDestLoc}
+                      onSearch={handleSearch}
+                      loading={loading}
+                    />
                   </div>
                 </div>
 
@@ -198,8 +243,8 @@ function App() {
                   
                   {/* Interactive Map view */}
                   <MapView
-                    sourceCoords={null}
-                    destCoords={null}
+                    sourceCoords={sourceLoc ? [sourceLoc.lat, sourceLoc.lng] : null}
+                    destCoords={destLoc ? [destLoc.lat, destLoc.lng] : null}
                     routeGeometry={null}
                   />
                 </div>

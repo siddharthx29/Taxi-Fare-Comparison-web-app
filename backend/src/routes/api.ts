@@ -4,6 +4,14 @@ import { calculateFaresAndScores } from '../services/pricing';
 
 const router = Router();
 
+// Cache structure for geocoding queries
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+const geocodeCache = new Map<string, CacheEntry>();
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes cache
+
 // Geocoding Endpoint (Proxies Nominatim)
 router.get('/geocode', async (req: Request, res: Response) => {
   const query = req.query.q as string;
@@ -11,19 +19,45 @@ router.get('/geocode', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Search query parameter "q" is required' });
   }
 
+  // Check cache first
+  const normalizedQuery = query.trim().toLowerCase();
+  const cached = geocodeCache.get(normalizedQuery);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Geocoding Cache HIT] Query: "${query}"`);
+    }
+    return res.json(cached.data);
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[Geocoding Cache MISS] Fetching from OSM Nominatim: "${query}"`);
+  }
+
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`;
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5&accept-language=en`;
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'RideCompare-App/1.0.0 (contact@ridecompare.com)'
       }
     });
 
+    if (response.status === 429 || response.status === 503) {
+      console.warn(`[Geocoding Rate Limit] Nominatim returned status ${response.status}`);
+      return res.status(429).json({ error: 'API rate limit reached. Please wait a few seconds and try again.' });
+    }
+
     if (!response.ok) {
       throw new Error(`Nominatim returned status ${response.status}`);
     }
 
     const data = await response.json();
+
+    // Cache the response
+    geocodeCache.set(normalizedQuery, {
+      data,
+      timestamp: Date.now()
+    });
+
     return res.json(data);
   } catch (error: any) {
     console.error('Geocoding error:', error);

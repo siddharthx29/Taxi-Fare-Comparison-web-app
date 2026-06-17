@@ -121,7 +121,8 @@ async function startServer() {
         });
     }
     catch (error) {
-        console.error('Fatal error starting RideCompare server:', error);
+        console.error('❌ FATAL: Database connection could not be established. Server startup aborted.');
+        console.error(error.message || error);
         process.exit(1);
     }
 }

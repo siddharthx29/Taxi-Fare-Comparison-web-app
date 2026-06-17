@@ -36,7 +36,7 @@ export const AnalyticsDashboard: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://localhost:5000/api/analytics');
+      const response = await fetch('/api/analytics');
       if (response.ok) {
         const result = await response.json();
         setData(result);

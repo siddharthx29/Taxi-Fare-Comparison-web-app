@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Locate, ArrowUpDown, Search, Loader2 } from 'lucide-react';
+import { MapPin, Locate, ArrowUpDown, Search, Loader2, AlertCircle } from 'lucide-react';
 
 interface LocationInfo {
   label: string;
@@ -8,30 +8,72 @@ interface LocationInfo {
 }
 
 interface SearchPanelProps {
+  selectedSource: LocationInfo | null;
+  selectedDest: LocationInfo | null;
+  onSourceSelect: (loc: LocationInfo | null) => void;
+  onDestSelect: (loc: LocationInfo | null) => void;
   onSearch: (source: LocationInfo, destination: LocationInfo) => void;
   loading: boolean;
 }
 
-export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) => {
+export const SearchPanel: React.FC<SearchPanelProps> = ({
+  selectedSource,
+  selectedDest,
+  onSourceSelect,
+  onDestSelect,
+  onSearch,
+  loading
+}) => {
   const [sourceInput, setSourceInput] = useState('');
   const [destInput, setDestInput] = useState('');
   
   const [sourceSuggestions, setSourceSuggestions] = useState<any[]>([]);
   const [destSuggestions, setDestSuggestions] = useState<any[]>([]);
 
-  const [selectedSource, setSelectedSource] = useState<LocationInfo | null>(null);
-  const [selectedDest, setSelectedDest] = useState<LocationInfo | null>(null);
-
   const [geolocating, setGeolocating] = useState(false);
   const [sourceLoading, setSourceLoading] = useState(false);
   const [destLoading, setDestLoading] = useState(false);
+
+  // Error States
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [destError, setDestError] = useState<string | null>(null);
 
   // Suggestion overlay toggles
   const [showSourceOverlay, setShowSourceOverlay] = useState(false);
   const [showDestOverlay, setShowDestOverlay] = useState(false);
 
+  // Keyboard navigation highlights (-1 means none)
+  const [sourceHighlightIdx, setSourceHighlightIdx] = useState<number>(-1);
+  const [destHighlightIdx, setDestHighlightIdx] = useState<number>(-1);
+
   const sourceRef = useRef<HTMLDivElement>(null);
   const destRef = useRef<HTMLDivElement>(null);
+
+  // Sync inputs with props (so resets, swaps, and outside updates reflect in the input value)
+  useEffect(() => {
+    if (selectedSource) {
+      setSourceInput(selectedSource.label);
+    } else if (!sourceLoading && !showSourceOverlay) {
+      setSourceInput('');
+    }
+  }, [selectedSource]);
+
+  useEffect(() => {
+    if (selectedDest) {
+      setDestInput(selectedDest.label);
+    } else if (!destLoading && !showDestOverlay) {
+      setDestInput('');
+    }
+  }, [selectedDest]);
+
+  // Reset highlight index when suggestions change
+  useEffect(() => {
+    setSourceHighlightIdx(-1);
+  }, [sourceSuggestions]);
+
+  useEffect(() => {
+    setDestHighlightIdx(-1);
+  }, [destSuggestions]);
 
   // Close overlays on click outside
   useEffect(() => {
@@ -48,43 +90,74 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
   }, []);
 
   // Fetch suggestions helper
-  const fetchSuggestions = async (val: string, setSuggests: (arr: any[]) => void, setLoading: (b: boolean) => void) => {
-    if (val.trim().length < 3) {
+  const fetchSuggestions = async (
+    val: string,
+    setSuggests: (arr: any[]) => void,
+    setLoading: (b: boolean) => void,
+    setError: (err: string | null) => void
+  ) => {
+    const trimmedVal = val.trim();
+    if (trimmedVal.length < 3) {
       setSuggests([]);
+      setError(null);
       return;
     }
     setLoading(true);
+    setError(null);
     try {
-      const response = await fetch(`http://localhost:5000/api/geocode?q=${encodeURIComponent(val)}`);
-      if (response.ok) {
-        const data = await response.json();
+      if (import.meta.env.DEV) {
+        console.log(`[Autocomplete Search] Fetching suggestions for: "${trimmedVal}"`);
+      }
+      
+      const response = await fetch(`/api/geocode?q=${encodeURIComponent(trimmedVal)}`);
+      
+      if (response.status === 429) {
+        setError('Geocoding rate limit reached. Please wait a moment.');
+        setSuggests([]);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Server returned status ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.error) {
+        setError(data.error);
+        setSuggests([]);
+      } else if (data.length === 0) {
+        setError('No locations found. Try a different term.');
+        setSuggests([]);
+      } else {
         setSuggests(data);
+        setError(null);
       }
     } catch (err) {
       console.error('Failed fetching address recommendations:', err);
+      setError('Connection failed. Please check backend service.');
+      setSuggests([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Debounced input fetch suggestions
+  // Debounced input fetch suggestions (500ms delay)
   useEffect(() => {
     const delayDebounce = setTimeout(() => {
-      // Only query if input is not matching selected source
       if (sourceInput && (!selectedSource || sourceInput !== selectedSource.label)) {
-        fetchSuggestions(sourceInput, setSourceSuggestions, setSourceLoading);
+        fetchSuggestions(sourceInput, setSourceSuggestions, setSourceLoading, setSourceError);
       }
-    }, 400);
+    }, 500);
     return () => clearTimeout(delayDebounce);
   }, [sourceInput, selectedSource]);
 
   useEffect(() => {
     const delayDebounce = setTimeout(() => {
-      // Only query if input is not matching selected dest
       if (destInput && (!selectedDest || destInput !== selectedDest.label)) {
-        fetchSuggestions(destInput, setDestSuggestions, setDestLoading);
+        fetchSuggestions(destInput, setDestSuggestions, setDestLoading, setDestError);
       }
-    }, 400);
+    }, 500);
     return () => clearTimeout(delayDebounce);
   }, [destInput, selectedDest]);
 
@@ -100,8 +173,11 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
       async (position) => {
         const { latitude, longitude } = position.coords;
         try {
+          if (import.meta.env.DEV) {
+            console.log(`[Geolocation] Detected coordinates: [${latitude}, ${longitude}]`);
+          }
           // Reverse geocode to get human address
-          const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
+          const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=en`;
           const response = await fetch(url, {
             headers: {
               'User-Agent': 'RideCompare-App/1.0.0 (contact@ridecompare.com)'
@@ -120,19 +196,20 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
             lng: longitude
           };
 
-          setSelectedSource(locationData);
+          onSourceSelect(locationData);
           setSourceInput(addressLabel);
           setShowSourceOverlay(false);
+          setSourceError(null);
         } catch (err) {
           console.error('Error reverse geocoding geolocation:', err);
-          // Fallback
           const fallback = {
             label: `Current Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
             lat: latitude,
             lng: longitude
           };
-          setSelectedSource(fallback);
+          onSourceSelect(fallback);
           setSourceInput(fallback.label);
+          setSourceError(null);
         } finally {
           setGeolocating(false);
         }
@@ -147,14 +224,14 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
   };
 
   const handleSwap = () => {
-    const tempInput = sourceInput;
-    const tempSelected = selectedSource;
+    if (import.meta.env.DEV) {
+      console.log('[Autocomplete] Swapping source and destination...');
+    }
+    const tempSource = selectedSource;
+    const tempDest = selectedDest;
 
-    setSourceInput(destInput);
-    setSelectedSource(selectedDest);
-
-    setDestInput(tempInput);
-    setSelectedDest(tempSelected);
+    onSourceSelect(tempDest);
+    onDestSelect(tempSource);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -163,6 +240,67 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
       onSearch(selectedSource, selectedDest);
     } else {
       alert('Please select valid locations from the suggestion list for both source and destination.');
+    }
+  };
+
+  // Keyboard navigation event handlers
+  const handleSourceKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSourceOverlay || sourceSuggestions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSourceHighlightIdx(prev => (prev + 1) % sourceSuggestions.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSourceHighlightIdx(prev => (prev - 1 + sourceSuggestions.length) % sourceSuggestions.length);
+    } else if (e.key === 'Enter') {
+      if (sourceHighlightIdx >= 0 && sourceHighlightIdx < sourceSuggestions.length) {
+        e.preventDefault();
+        const item = sourceSuggestions[sourceHighlightIdx];
+        if (import.meta.env.DEV) {
+          console.log(`[Keyboard Action] Selecting source item: "${item.display_name}"`);
+        }
+        onSourceSelect({
+          label: item.display_name,
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lon)
+        });
+        setSourceInput(item.display_name);
+        setShowSourceOverlay(false);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowSourceOverlay(false);
+    }
+  };
+
+  const handleDestKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showDestOverlay || destSuggestions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setDestHighlightIdx(prev => (prev + 1) % destSuggestions.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setDestHighlightIdx(prev => (prev - 1 + destSuggestions.length) % destSuggestions.length);
+    } else if (e.key === 'Enter') {
+      if (destHighlightIdx >= 0 && destHighlightIdx < destSuggestions.length) {
+        e.preventDefault();
+        const item = destSuggestions[destHighlightIdx];
+        if (import.meta.env.DEV) {
+          console.log(`[Keyboard Action] Selecting dest item: "${item.display_name}"`);
+        }
+        onDestSelect({
+          label: item.display_name,
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lon)
+        });
+        setDestInput(item.display_name);
+        setShowDestOverlay(false);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowDestOverlay(false);
     }
   };
 
@@ -182,10 +320,16 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
               type="text"
               value={sourceInput}
               onChange={(e) => {
-                setSourceInput(e.target.value);
+                const val = e.target.value;
+                setSourceInput(val);
                 setShowSourceOverlay(true);
+                // Clear selection if they alter the field
+                if (!selectedSource || val !== selectedSource.label) {
+                  onSourceSelect(null);
+                }
               }}
               onFocus={() => setShowSourceOverlay(true)}
+              onKeyDown={handleSourceKeyDown}
               placeholder="Search pickup city, building or station..."
               className="w-full pl-10 pr-12 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[var(--text-primary)] placeholder-slate-400 dark:placeholder-slate-500 font-medium transition-all"
               required
@@ -203,13 +347,28 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
           </div>
 
           {/* Source Suggestions Dropdown */}
-          {showSourceOverlay && sourceSuggestions.length > 0 && (
+          {showSourceOverlay && (sourceSuggestions.length > 0 || sourceLoading || sourceError) && (
             <ul className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl shadow-lg divide-y divide-[var(--border-color)]">
-              {sourceSuggestions.map((item, idx) => (
+              {sourceLoading && sourceSuggestions.length === 0 && (
+                <li className="px-4 py-3 text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin text-indigo-500" />
+                  <span>Searching locations...</span>
+                </li>
+              )}
+              {sourceError && !sourceLoading && (
+                <li className="px-4 py-3 text-xs font-semibold text-red-500 dark:text-red-400 flex items-center gap-2">
+                  <AlertCircle size={14} className="text-red-500" />
+                  <span>{sourceError}</span>
+                </li>
+              )}
+              {!sourceLoading && !sourceError && sourceSuggestions.map((item, idx) => (
                 <li
                   key={idx}
                   onClick={() => {
-                    setSelectedSource({
+                    if (import.meta.env.DEV) {
+                      console.log(`[Mouse Action] Selecting source item: "${item.display_name}"`);
+                    }
+                    onSourceSelect({
                       label: item.display_name,
                       lat: parseFloat(item.lat),
                       lng: parseFloat(item.lon)
@@ -217,7 +376,11 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
                     setSourceInput(item.display_name);
                     setShowSourceOverlay(false);
                   }}
-                  className="px-4 py-2.5 text-xs font-medium cursor-pointer hover:bg-[var(--bg-primary)] text-[var(--text-primary)] flex gap-2 items-start"
+                  className={`px-4 py-2.5 text-xs font-medium cursor-pointer flex gap-2 items-start transition-all duration-150 text-[var(--text-primary)] ${
+                    idx === sourceHighlightIdx
+                      ? 'bg-[var(--bg-primary)] border-l-4 border-indigo-500 pl-3 font-semibold'
+                      : 'hover:bg-[var(--bg-primary)] border-l-4 border-transparent'
+                  }`}
                 >
                   <MapPin size={14} className="mt-0.5 text-slate-400 shrink-0" />
                   <span>{item.display_name}</span>
@@ -252,10 +415,16 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
               type="text"
               value={destInput}
               onChange={(e) => {
-                setDestInput(e.target.value);
+                const val = e.target.value;
+                setDestInput(val);
                 setShowDestOverlay(true);
+                // Clear selection if they alter the field
+                if (!selectedDest || val !== selectedDest.label) {
+                  onDestSelect(null);
+                }
               }}
               onFocus={() => setShowDestOverlay(true)}
+              onKeyDown={handleDestKeyDown}
               placeholder="Search destination city, building or station..."
               className="w-full pl-10 pr-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-[var(--text-primary)] placeholder-slate-400 dark:placeholder-slate-500 font-medium transition-all"
               required
@@ -263,13 +432,28 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
           </div>
 
           {/* Destination Suggestions Dropdown */}
-          {showDestOverlay && destSuggestions.length > 0 && (
+          {showDestOverlay && (destSuggestions.length > 0 || destLoading || destError) && (
             <ul className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl shadow-lg divide-y divide-[var(--border-color)]">
-              {destSuggestions.map((item, idx) => (
+              {destLoading && destSuggestions.length === 0 && (
+                <li className="px-4 py-3 text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin text-indigo-500" />
+                  <span>Searching locations...</span>
+                </li>
+              )}
+              {destError && !destLoading && (
+                <li className="px-4 py-3 text-xs font-semibold text-red-500 dark:text-red-400 flex items-center gap-2">
+                  <AlertCircle size={14} className="text-red-500" />
+                  <span>{destError}</span>
+                </li>
+              )}
+              {!destLoading && !destError && destSuggestions.map((item, idx) => (
                 <li
                   key={idx}
                   onClick={() => {
-                    setSelectedDest({
+                    if (import.meta.env.DEV) {
+                      console.log(`[Mouse Action] Selecting dest item: "${item.display_name}"`);
+                    }
+                    onDestSelect({
                       label: item.display_name,
                       lat: parseFloat(item.lat),
                       lng: parseFloat(item.lon)
@@ -277,7 +461,11 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, loading }) =
                     setDestInput(item.display_name);
                     setShowDestOverlay(false);
                   }}
-                  className="px-4 py-2.5 text-xs font-medium cursor-pointer hover:bg-[var(--bg-primary)] text-[var(--text-primary)] flex gap-2 items-start"
+                  className={`px-4 py-2.5 text-xs font-medium cursor-pointer flex gap-2 items-start transition-all duration-150 text-[var(--text-primary)] ${
+                    idx === destHighlightIdx
+                      ? 'bg-[var(--bg-primary)] border-l-4 border-indigo-500 pl-3 font-semibold'
+                      : 'hover:bg-[var(--bg-primary)] border-l-4 border-transparent'
+                  }`}
                 >
                   <MapPin size={14} className="mt-0.5 text-slate-400 shrink-0" />
                   <span>{item.display_name}</span>
