@@ -110,13 +110,29 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({
         console.log(`[Autocomplete Search] Fetching suggestions for: "${trimmedVal}"`);
       }
       
-      const response = await apiFetch(`/api/geocode?q=${encodeURIComponent(trimmedVal)}`);
-      const data = await response.json();
+      let data;
+      try {
+        const response = await apiFetch(`/api/geocode?q=${encodeURIComponent(trimmedVal)}`);
+        data = await response.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
+      } catch (backendErr: any) {
+        console.warn('Backend geocoding failed or rate-limited. Falling back to direct Nominatim query.', backendErr);
+        // Fallback: Query Nominatim directly from the client browser
+        const directUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(trimmedVal)}&addressdetails=1&limit=5&accept-language=en`;
+        const response = await fetch(directUrl, {
+          headers: {
+            'User-Agent': 'RideCompare-App/1.0.0 (contact@ridecompare.com)'
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`Direct Nominatim query failed with status ${response.status}`);
+        }
+        data = await response.json();
+      }
       
-      if (data.error) {
-        setError(data.error);
-        setSuggests([]);
-      } else if (data.length === 0) {
+      if (!data || data.length === 0) {
         setError('No locations found. Try a different term.');
         setSuggests([]);
       } else {
