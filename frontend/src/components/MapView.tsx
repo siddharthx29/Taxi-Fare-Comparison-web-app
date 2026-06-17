@@ -152,7 +152,7 @@ export const MapView: React.FC<MapViewProps> = ({
   }, [sourceCoords, destCoords, routeGeometry, distanceKm, durationMins]);
 
   return (
-    <div className="relative w-full h-[320px] md:h-full min-h-[300px] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-md transition-all">
+    <div className="relative w-full h-[240px] md:h-full min-h-[220px] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-md transition-all">
       {/* Visual Overlay badges when routing is loaded */}
       {distanceKm && durationMins && (
         <div className="absolute top-4 left-4 z-40 bg-[var(--bg-secondary)] border border-[var(--border-color)] px-4 py-2 rounded-xl shadow-lg flex gap-4 text-xs font-bold divide-x divide-[var(--border-color)]">

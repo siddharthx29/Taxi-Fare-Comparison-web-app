@@ -121,10 +121,14 @@ function App() {
         toggleDarkMode={() => setDarkMode(!darkMode)}
         showAdmin={showAdmin}
         setShowAdmin={setShowAdmin}
+        onLogoClick={() => {
+          setShowAdmin(false);
+          resetSearch();
+        }}
       />
 
       {/* Main Workspace Frame */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 flex flex-col gap-6 mb-16 md:mb-0">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 md:p-8 flex flex-col gap-4 md:gap-6 mb-16 md:mb-0">
         
         {/* PWA Install Banner */}
         {showInstallBanner && (
@@ -165,14 +169,14 @@ function App() {
           <div>
             {!comparison && !loading ? (
               /* LANDING HERO VIEW (Before route search is triggered) */
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center py-6 md:py-12 animate-fade-in">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center py-3 md:py-12 animate-fade-in">
                 {/* Hero left details & search panel */}
                 <div className="lg:col-span-6 space-y-6">
                   <div className="space-y-3">
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200/50 dark:border-indigo-800/40">
                       ⚡ Intelligent Transport Aggregator
                     </span>
-                    <h2 className="text-4xl md:text-5xl font-black tracking-tight text-[var(--text-primary)] leading-[1.15]">
+                    <h2 className="text-3xl md:text-5xl font-black tracking-tight text-[var(--text-primary)] leading-[1.15]">
                       Compare Rides.<br />
                       <span className="bg-gradient-to-r from-indigo-600 to-indigo-400 dark:from-indigo-400 dark:to-indigo-300 bg-clip-text text-transparent">Save Time. Save Money.</span>
                     </h2>
@@ -188,7 +192,7 @@ function App() {
                 </div>
 
                 {/* Hero right map container panel */}
-                <div className="lg:col-span-6 h-[380px] lg:h-[480px] relative">
+                <div className="lg:col-span-6 h-[280px] sm:h-[350px] lg:h-[480px] relative">
                   {/* Glowing background ring decoration for startup aesthetic */}
                   <div className="absolute inset-0 bg-indigo-500/10 dark:bg-indigo-500/5 rounded-full filter blur-3xl -z-10 w-3/4 h-3/4 mx-auto my-auto" />
                   
@@ -202,7 +206,7 @@ function App() {
               </div>
             ) : (
               /* RESULTS SPLIT PANEL VIEW (After route search) */
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch animate-fade-in">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-stretch animate-fade-in">
                 
                 {/* Left side inputs and comparison cards */}
                 <div className="lg:col-span-5 flex flex-col gap-6">
@@ -250,7 +254,7 @@ function App() {
                 </div>
 
                 {/* Right side map routing render */}
-                <div className="lg:col-span-7 h-[350px] lg:h-[600px] sticky top-24">
+                <div className="lg:col-span-7 h-[260px] sm:h-[350px] lg:h-[600px] sticky top-24">
                   <MapView
                     sourceCoords={sourceLoc ? [sourceLoc.lat, sourceLoc.lng] : null}
                     destCoords={destLoc ? [destLoc.lat, destLoc.lng] : null}

@@ -5,6 +5,7 @@ interface NavbarProps {
   toggleDarkMode: () => void;
   showAdmin: boolean;
   setShowAdmin: (show: boolean) => void;
+  onLogoClick: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -12,15 +13,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   toggleDarkMode,
   showAdmin,
   setShowAdmin,
+  onLogoClick,
 }) => {
   return (
-    <header className="sticky top-0 z-50 w-full glass-panel border-b border-[var(--glass-border)] py-3 px-6 md:px-12 flex justify-between items-center transition-all duration-300">
+    <header className="sticky top-0 z-50 w-full glass-panel border-b border-[var(--glass-border)] py-2 md:py-3 px-4 md:px-12 flex justify-between items-center transition-all duration-300">
       {/* Branding Logo */}
-      <div className="flex items-center cursor-pointer select-none" onClick={() => setShowAdmin(false)}>
+      <div className="flex items-center cursor-pointer select-none" onClick={onLogoClick}>
         <img 
           src="/logo.png" 
           alt="RideCompare Logo" 
-          className="h-12 md:h-14 -my-3 object-contain hover:scale-[1.02] transition-transform" 
+          className="h-16 md:h-24 object-contain hover:scale-[1.05] transition-transform" 
         />
       </div>
 

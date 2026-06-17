@@ -12,32 +12,33 @@ export const RideComparison: React.FC<RideComparisonProps> = ({ comparison, onBo
 
   // Provider icons configuration
   const getProviderIcon = (name: string) => {
-    switch (name.toLowerCase()) {
-      case 'uber':
-        return (
-          <div className="w-12 h-12 bg-black text-white rounded-2xl flex items-center justify-center font-black text-lg border border-slate-800 shrink-0">
-            U
-          </div>
-        );
-      case 'ola':
-        return (
-          <div className="w-12 h-12 bg-yellow-400 text-slate-950 rounded-2xl flex items-center justify-center font-black text-lg border border-yellow-500 shrink-0">
-            O
-          </div>
-        );
-      case 'rapido':
-        return (
-          <div className="w-12 h-12 bg-yellow-500 text-slate-900 rounded-2xl flex items-center justify-center font-black text-base italic border border-yellow-600 shrink-0">
-            R
-          </div>
-        );
-      default:
-        return (
-          <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-bold text-lg shrink-0">
-            R
-          </div>
-        );
+    const lowercaseName = name.toLowerCase();
+    if (lowercaseName.includes('uber')) {
+      return (
+        <div className="w-12 h-12 bg-black text-white rounded-2xl flex items-center justify-center font-black text-lg border border-slate-800 shrink-0">
+          U
+        </div>
+      );
     }
+    if (lowercaseName.includes('ola')) {
+      return (
+        <div className="w-12 h-12 bg-yellow-400 text-slate-950 rounded-2xl flex items-center justify-center font-black text-lg border border-yellow-500 shrink-0">
+          O
+        </div>
+      );
+    }
+    if (lowercaseName.includes('rapido')) {
+      return (
+        <div className="w-12 h-12 bg-yellow-500 text-slate-900 rounded-2xl flex items-center justify-center font-black text-base italic border border-yellow-600 shrink-0">
+          R
+        </div>
+      );
+    }
+    return (
+      <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-bold text-lg shrink-0">
+        R
+      </div>
+    );
   };
 
   const handleBook = (p: RideProviderDetails) => {

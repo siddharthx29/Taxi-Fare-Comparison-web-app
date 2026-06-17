@@ -94,21 +94,19 @@ export const AnalyticsDashboard: React.FC = () => {
 
   // Provider clicks lookup for calculations
   const getProviderColorClass = (name: string) => {
-    switch (name.toLowerCase()) {
-      case 'uber': return 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900';
-      case 'ola': return 'bg-yellow-400 text-slate-900';
-      case 'rapido': return 'bg-amber-500 text-white';
-      default: return 'bg-indigo-600 text-white';
-    }
+    const lower = name.toLowerCase();
+    if (lower.includes('uber')) return 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900';
+    if (lower.includes('ola')) return 'bg-yellow-400 text-slate-900';
+    if (lower.includes('rapido')) return 'bg-amber-500 text-white';
+    return 'bg-indigo-600 text-white';
   };
 
   const getProviderTextColor = (name: string) => {
-    switch (name.toLowerCase()) {
-      case 'uber': return 'text-slate-800 dark:text-slate-200';
-      case 'ola': return 'text-yellow-600 dark:text-yellow-400';
-      case 'rapido': return 'text-amber-500';
-      default: return 'text-indigo-500';
-    }
+    const lower = name.toLowerCase();
+    if (lower.includes('uber')) return 'text-slate-800 dark:text-slate-200';
+    if (lower.includes('ola')) return 'text-yellow-600 dark:text-yellow-400';
+    if (lower.includes('rapido')) return 'text-amber-500';
+    return 'text-indigo-500';
   };
 
   const totalClicks = data.providerShares.reduce((acc, curr) => acc + curr.clicks, 0) || 1;

@@ -43,7 +43,7 @@ export function calculateFaresAndScores(distanceKm: number, durationMins: number
 
   const providersConfig = [
     {
-      name: 'Uber',
+      name: 'Uber Go',
       type: 'Cab' as const,
       baseFare: 55,
       perKmRate: 14.5,
@@ -54,7 +54,29 @@ export function calculateFaresAndScores(distanceKm: number, durationMins: number
       webLink: `https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`
     },
     {
-      name: 'Ola',
+      name: 'Uber Auto',
+      type: 'Auto' as const,
+      baseFare: 35,
+      perKmRate: 10.0,
+      perMinRate: 1.5,
+      etaMultiplier: 1.05,
+      surgeBase: Math.max(1.0, trafficSurge - 0.05),
+      appDeepLink: `uber://?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`,
+      webLink: `https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`
+    },
+    {
+      name: 'Uber Moto',
+      type: 'Bike' as const,
+      baseFare: 20,
+      perKmRate: 8.0,
+      perMinRate: 1.1,
+      etaMultiplier: 0.82,
+      surgeBase: Math.max(1.0, trafficSurge * 0.92),
+      appDeepLink: `uber://?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`,
+      webLink: `https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`
+    },
+    {
+      name: 'Ola Mini',
       type: 'Cab' as const,
       baseFare: 50,
       perKmRate: 15.0,
@@ -65,13 +87,57 @@ export function calculateFaresAndScores(distanceKm: number, durationMins: number
       webLink: `https://www.olacabs.com/`
     },
     {
-      name: 'Rapido',
+      name: 'Ola Auto',
+      type: 'Auto' as const,
+      baseFare: 32,
+      perKmRate: 10.5,
+      perMinRate: 1.4,
+      etaMultiplier: 1.12,
+      surgeBase: Math.max(1.0, trafficSurge - 0.08),
+      appDeepLink: `olacabs://app/launch?pickup=my_location`,
+      webLink: `https://www.olacabs.com/`
+    },
+    {
+      name: 'Ola Bike',
       type: 'Bike' as const,
-      baseFare: 20,
-      perKmRate: 8.0,
-      perMinRate: 1.2,
-      etaMultiplier: 0.8, // 20% faster than cars in traffic
-      surgeBase: Math.max(1.0, trafficSurge * 0.9),
+      baseFare: 18,
+      perKmRate: 8.5,
+      perMinRate: 1.0,
+      etaMultiplier: 0.85,
+      surgeBase: Math.max(1.0, trafficSurge * 0.95),
+      appDeepLink: `olacabs://app/launch?pickup=my_location`,
+      webLink: `https://www.olacabs.com/`
+    },
+    {
+      name: 'Rapido Bike',
+      type: 'Bike' as const,
+      baseFare: 15,
+      perKmRate: 7.5,
+      perMinRate: 0.9,
+      etaMultiplier: 0.78,
+      surgeBase: Math.max(1.0, trafficSurge * 0.88),
+      appDeepLink: `rapido://booking`,
+      webLink: `https://www.rapido.bike/`
+    },
+    {
+      name: 'Rapido Auto',
+      type: 'Auto' as const,
+      baseFare: 28,
+      perKmRate: 9.8,
+      perMinRate: 1.3,
+      etaMultiplier: 1.08,
+      surgeBase: Math.max(1.0, trafficSurge - 0.07),
+      appDeepLink: `rapido://booking`,
+      webLink: `https://www.rapido.bike/`
+    },
+    {
+      name: 'Rapido Cab',
+      type: 'Cab' as const,
+      baseFare: 48,
+      perKmRate: 13.8,
+      perMinRate: 2.0,
+      etaMultiplier: 1.15,
+      surgeBase: Math.max(1.0, trafficSurge - 0.02),
       appDeepLink: `rapido://booking`,
       webLink: `https://www.rapido.bike/`
     }
@@ -82,10 +148,13 @@ export function calculateFaresAndScores(distanceKm: number, durationMins: number
     const providerDistance = distanceKm;
     const providerEta = Math.round(durationMins * cfg.etaMultiplier);
     
+    // Simulate dynamic real-time demand surge fluctuation (+0% to +25%)
+    const demandSurge = 1.0 + Math.random() * 0.25;
+    const finalSurge = Number((cfg.surgeBase * demandSurge).toFixed(2));
+    
     const dFare = providerDistance * cfg.perKmRate;
     const tFare = providerEta * cfg.perMinRate;
-    const surge = Number(cfg.surgeBase.toFixed(2));
-    const rawTotal = (cfg.baseFare + dFare + tFare) * surge;
+    const rawTotal = (cfg.baseFare + dFare + tFare) * finalSurge;
     const totalFare = Math.round(rawTotal);
 
     return {
@@ -96,7 +165,7 @@ export function calculateFaresAndScores(distanceKm: number, durationMins: number
       baseFare: cfg.baseFare,
       distanceFare: Number(dFare.toFixed(2)),
       durationFare: Number(tFare.toFixed(2)),
-      surgeMultiplier: surge,
+      surgeMultiplier: finalSurge,
       totalFare,
       recommendationScore: 0, // calculated below
       appDeepLink: cfg.appDeepLink,
@@ -104,9 +173,7 @@ export function calculateFaresAndScores(distanceKm: number, durationMins: number
     };
   });
 
-  // Calculate recommendation scores using weighted formula:
-  // Score = (40% Fare Efficiency) + (40% Travel Time Efficiency) + (20% Distance Efficiency)
-  // Let's normalize these values against the group
+  // Calculate recommendation scores relative to their categories
   const fares = providers.map(p => p.totalFare);
   const times = providers.map(p => p.etaMins);
   const distances = providers.map(p => p.distanceKm);
@@ -115,13 +182,40 @@ export function calculateFaresAndScores(distanceKm: number, durationMins: number
   const minTime = Math.min(...times);
   const minDistance = Math.min(...distances);
 
+  // Group providers by type to find category-specific minimums
+  const cabs = providers.filter(p => p.type === 'Cab');
+  const autos = providers.filter(p => p.type === 'Auto');
+  const bikes = providers.filter(p => p.type === 'Bike');
+
+  const minFareCab = cabs.length > 0 ? Math.min(...cabs.map(c => c.totalFare)) : minFare;
+  const minTimeCab = cabs.length > 0 ? Math.min(...cabs.map(c => c.etaMins)) : minTime;
+
+  const minFareAuto = autos.length > 0 ? Math.min(...autos.map(a => a.totalFare)) : minFare;
+  const minTimeAuto = autos.length > 0 ? Math.min(...autos.map(a => a.etaMins)) : minTime;
+
+  const minFareBike = bikes.length > 0 ? Math.min(...bikes.map(b => b.totalFare)) : minFare;
+  const minTimeBike = bikes.length > 0 ? Math.min(...bikes.map(b => b.etaMins)) : minTime;
+
   providers.forEach(p => {
-    // Efficiency is inverted: lower is better, so min / p_val is efficiency
-    const fareEfficiency = minFare / p.totalFare;
-    const timeEfficiency = minTime / p.etaMins;
+    let typeMinFare = minFare;
+    let typeMinTime = minTime;
+
+    if (p.type === 'Cab') {
+      typeMinFare = minFareCab;
+      typeMinTime = minTimeCab;
+    } else if (p.type === 'Auto') {
+      typeMinFare = minFareAuto;
+      typeMinTime = minTimeAuto;
+    } else if (p.type === 'Bike') {
+      typeMinFare = minFareBike;
+      typeMinTime = minTimeBike;
+    }
+
+    const fareEfficiency = typeMinFare / p.totalFare;
+    const timeEfficiency = typeMinTime / p.etaMins;
     const distanceEfficiency = minDistance / p.distanceKm;
 
-    const rawScore = (fareEfficiency * 40) + (timeEfficiency * 40) + (distanceEfficiency * 20);
+    const rawScore = (fareEfficiency * 45) + (timeEfficiency * 45) + (distanceEfficiency * 10);
     p.recommendationScore = Math.round(rawScore);
   });
 
