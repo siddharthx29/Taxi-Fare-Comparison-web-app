@@ -2,17 +2,16 @@ const getApiBaseUrl = (): string => {
   // If there's an environment variable injected
   const envUrl = import.meta.env.VITE_API_URL;
   
-  // If we are running in the browser and the hostname is not localhost,
-  // we fallback to the production backend URL (https://ridecompare.onrender.com)
-  // even if VITE_API_URL is set to localhost (e.g. from the committed .env file).
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
     if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      // If the envUrl is present and does not point to localhost, use it. Otherwise, use the deployed Render backend URL.
+      // If the envUrl is present and does not point to localhost, use it.
       if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
         return envUrl;
       }
-      return 'https://ridecompare.onrender.com';
+      // Since the backend serves the frontend static build from the same server,
+      // we default to the current domain origin to prevent CORS/cross-origin network errors.
+      return window.location.origin;
     }
   }
   

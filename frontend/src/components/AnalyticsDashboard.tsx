@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart3, TrendingUp, Users, PiggyBank, RefreshCw, Navigation, Award, AlertCircle } from 'lucide-react';
+import { BarChart3, TrendingUp, Users, PiggyBank, RefreshCw, Navigation, Award, AlertCircle, Sparkles } from 'lucide-react';
 import { apiFetch } from '../utils/api';
 
 interface PopularRoute {
@@ -20,12 +20,20 @@ interface DailyTrend {
   count: number;
 }
 
+interface CheapestSelection {
+  provider: string;
+  times_cheapest: number;
+  times_selected: number;
+}
+
 interface AnalyticsData {
   totalSearches: number;
   avgSavings: number;
   popularRoutes: PopularRoute[];
   providerShares: ProviderShare[];
   dailyTrends: DailyTrend[];
+  cheapestProviderSelections: CheapestSelection[];
+  cheapestSelectionRate: number;
 }
 
 export const AnalyticsDashboard: React.FC = () => {
@@ -71,7 +79,7 @@ export const AnalyticsDashboard: React.FC = () => {
         </p>
         <button
           onClick={fetchAnalytics}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow"
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow cursor-pointer"
         >
           Retry Connection
         </button>
@@ -93,17 +101,17 @@ export const AnalyticsDashboard: React.FC = () => {
   const getProviderColorClass = (name: string) => {
     const lower = name.toLowerCase();
     if (lower.includes('uber')) return 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900';
-    if (lower.includes('ola')) return 'bg-yellow-400 text-slate-900';
-    if (lower.includes('rapido')) return 'bg-amber-500 text-white';
-    return 'bg-indigo-600 text-white';
+    if (lower.includes('ola')) return 'bg-lime-400 text-slate-900';
+    if (lower.includes('rapido')) return 'bg-amber-400 text-slate-950';
+    return 'bg-yellow-600 text-white';
   };
 
   const getProviderTextColor = (name: string) => {
     const lower = name.toLowerCase();
     if (lower.includes('uber')) return 'text-slate-800 dark:text-slate-200';
-    if (lower.includes('ola')) return 'text-yellow-600 dark:text-yellow-400';
+    if (lower.includes('ola')) return 'text-lime-600 dark:text-lime-400';
     if (lower.includes('rapido')) return 'text-amber-500';
-    return 'text-indigo-500';
+    return 'text-yellow-600';
   };
 
   const totalClicks = data.providerShares.reduce((acc, curr) => acc + curr.clicks, 0) || 1;
@@ -118,7 +126,7 @@ export const AnalyticsDashboard: React.FC = () => {
         </div>
         <button
           onClick={fetchAnalytics}
-          className="flex items-center gap-2 px-3 py-1.5 border border-[var(--border-color)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-primary)] text-xs font-bold rounded-xl transition-all"
+          className="flex items-center gap-2 px-3 py-1.5 border border-[var(--border-color)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-primary)] text-xs font-bold rounded-xl transition-all cursor-pointer"
         >
           <RefreshCw size={12} /> Sync Ledger
         </button>
@@ -132,31 +140,31 @@ export const AnalyticsDashboard: React.FC = () => {
             <BarChart3 size={24} />
           </div>
           <div>
-            <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Total Searches</span>
+            <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider block">Total Searches</span>
             <h4 className="text-2xl font-black text-[var(--text-primary)] mt-0.5">{data.totalSearches}</h4>
           </div>
         </div>
 
-        {/* Metric 2: Average Savings */}
+        {/* Metric 2: Average Savings (Fare Variance) */}
         <div className="p-6 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl shadow-sm flex items-center gap-5">
           <div className="p-3 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-xl shrink-0">
             <PiggyBank size={24} />
           </div>
           <div>
-            <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Average User Savings</span>
+            <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider block">Average Fare Differences</span>
             <h4 className="text-2xl font-black text-[var(--text-primary)] mt-0.5">₹{data.avgSavings}</h4>
           </div>
         </div>
 
-        {/* Metric 3: Best Provider share */}
+        {/* Metric 3: Cheapest Selection Rate */}
         <div className="p-6 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl shadow-sm flex items-center gap-5">
           <div className="p-3 bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-xl shrink-0">
             <Award size={24} />
           </div>
           <div>
-            <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">Top Choice</span>
+            <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider block">Cheapest Choice Selected</span>
             <h4 className="text-2xl font-black text-[var(--text-primary)] mt-0.5">
-              {data.providerShares[0]?.provider || 'None'}
+              {data.cheapestSelectionRate}%
             </h4>
           </div>
         </div>
@@ -250,6 +258,57 @@ export const AnalyticsDashboard: React.FC = () => {
               })
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Cheapest Provider Selections Table */}
+      <div className="p-6 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl shadow-sm space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] flex items-center gap-2">
+          <Sparkles size={14} className="text-indigo-500" /> Cheapest Provider Selected (Conversion Rate)
+        </h3>
+        <p className="text-[11px] text-[var(--text-secondary)] font-medium -mt-2">
+          Tracks how often each ride provider was the cheapest option, and how frequently users clicked "Book" when it was indeed the cheapest.
+        </p>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                <th className="pb-3 pl-2">Provider</th>
+                <th className="pb-3">Times Cheapest Option</th>
+                <th className="pb-3">Selected When Cheapest</th>
+                <th className="pb-3 text-right pr-4">Cheapest Conversion Rate</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-color)] font-medium text-[var(--text-primary)]">
+              {!data.cheapestProviderSelections || data.cheapestProviderSelections.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-6 text-center text-slate-400">No mock searches matching cheap selections available. Perform searches first!</td>
+                </tr>
+              ) : (
+                data.cheapestProviderSelections.map((sel, idx) => {
+                  const rate = sel.times_cheapest > 0 ? Math.round((sel.times_selected / sel.times_cheapest) * 100) : 0;
+                  return (
+                    <tr key={idx} className="hover:bg-[var(--bg-primary)]/40 transition-colors">
+                      <td className="py-3.5 pl-2 font-black flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${getProviderTextColor(sel.provider)} bg-current`} />
+                        {sel.provider}
+                      </td>
+                      <td className="py-3.5 font-bold text-[var(--text-secondary)]">
+                        {sel.times_cheapest} searches
+                      </td>
+                      <td className="py-3.5 font-bold text-[var(--text-secondary)]">
+                        {sel.times_selected} clicks
+                      </td>
+                      <td className="py-3.5 text-right font-black pr-4 text-emerald-600 dark:text-emerald-400">
+                        {rate}%
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

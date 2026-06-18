@@ -69,6 +69,7 @@ router.get('/route', async (req, res) => {
     let distanceKm = 0;
     let durationMins = 0;
     let geometry = null;
+    let osrmSuccess = false;
     try {
         // Abort controller to enforce a 4-second timeout limit for OSRM public API
         const controller = new AbortController();
@@ -87,6 +88,7 @@ router.get('/route', async (req, res) => {
         distanceKm = route.distance / 1000; // OSRM returns meters
         durationMins = route.duration / 60; // OSRM returns seconds
         geometry = route.geometry;
+        osrmSuccess = true;
     }
     catch (error) {
         console.warn('⚠️ OSRM API failed or timed out. Falling back to straight-line Haversine routing approximation.', error.message);
@@ -102,6 +104,7 @@ router.get('/route', async (req, res) => {
         distanceKm = R * c * 1.25;
         // Assume average city travel speed of 25 km/h to approximate duration
         durationMins = (distanceKm / 25) * 60;
+        osrmSuccess = false;
         // Direct straight-line visual path fallback
         geometry = {
             type: 'LineString',
@@ -115,9 +118,9 @@ router.get('/route', async (req, res) => {
         const sourceLabel = sourceName || 'Source Location';
         const destLabel = destName || 'Destination Location';
         // Calculate fares & recommendation scores
-        const comparison = (0, pricing_1.calculateFaresAndScores)(distanceKm, durationMins, sourceLabel, destLabel);
+        const comparison = (0, pricing_1.calculateFaresAndScores)(distanceKm, durationMins, sourceLabel, destLabel, osrmSuccess);
         // Calculate savings
-        const fares = comparison.providers.map(p => p.totalFare);
+        const fares = comparison.providers.map(p => p.estimatedFare);
         const maxFare = Math.max(...fares);
         const minFare = Math.min(...fares);
         const potentialSavings = maxFare - minFare;
@@ -235,12 +238,38 @@ router.get('/analytics', async (req, res) => {
       ORDER BY d.day ASC
     `);
         const dailyTrends = dailyTrendsRes.rows;
+        // cheapest selection rate & breakdown
+        const cheapestSelectionsRes = await pool_1.pool.query(`
+      SELECT 
+        cheapest_provider as provider,
+        COUNT(*)::int as times_cheapest,
+        COUNT(CASE WHEN selected_provider = cheapest_provider THEN 1 END)::int as times_selected
+      FROM searches
+      WHERE cheapest_provider IS NOT NULL
+      GROUP BY cheapest_provider
+      ORDER BY times_selected DESC
+    `);
+        const cheapestProviderSelections = cheapestSelectionsRes.rows;
+        const selectionRateRes = await pool_1.pool.query(`
+      SELECT 
+        COUNT(*)::int as total_with_selection,
+        COUNT(CASE WHEN selected_provider = cheapest_provider THEN 1 END)::int as cheapest_selections
+      FROM searches
+      WHERE selected_provider IS NOT NULL
+    `);
+        const totalWithSelection = selectionRateRes.rows[0].total_with_selection || 0;
+        const cheapestSelections = selectionRateRes.rows[0].cheapest_selections || 0;
+        const cheapestSelectionRate = totalWithSelection > 0
+            ? Math.round((cheapestSelections / totalWithSelection) * 100)
+            : 0;
         return res.json({
             totalSearches,
             avgSavings,
             popularRoutes,
             providerShares,
-            dailyTrends
+            dailyTrends,
+            cheapestProviderSelections,
+            cheapestSelectionRate
         });
     }
     catch (error) {

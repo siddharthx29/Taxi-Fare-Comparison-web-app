@@ -5,7 +5,7 @@ import { MapView } from './components/MapView';
 import { RideComparison } from './components/RideComparison';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { Sparkles, Download, X, Search, BarChart3, Home } from 'lucide-react';
-import type { ComparisonResult } from '../../backend/src/services/pricing';
+import type { ComparisonResult } from '../../backend/src/services/types';
 import { apiFetch } from './utils/api';
 
 interface LocationInfo {

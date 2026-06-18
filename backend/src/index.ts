@@ -19,13 +19,25 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
   : [
       'https://taxi-fare-comparison-web-app.onrender.com',
+      'https://ridecompare.onrender.com',
       'http://localhost:5173',
-      'http://localhost:8080'
+      'http://localhost:8080',
+      'https://taxi.teamnexterp.com',
+      'http://taxi.teamnexterp.com'
     ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const isAllowed = allowedOrigins.includes(origin) || 
+      origin.endsWith('.teamnexterp.com') || 
+      origin === 'https://teamnexterp.com' ||
+      origin.endsWith('.onrender.com');
+
+    if (isAllowed) {
       callback(null, true);
     } else {
       callback(new Error(`Origin ${origin} not allowed by CORS`));

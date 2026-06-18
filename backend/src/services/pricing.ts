@@ -1,258 +1,250 @@
-export interface RideProviderDetails {
-  name: string;
-  type: 'Cab' | 'Bike' | 'Auto';
-  distanceKm: number;
-  etaMins: number;
-  baseFare: number;
-  distanceFare: number;
-  durationFare: number;
-  surgeMultiplier: number;
-  totalFare: number;
-  recommendationScore: number;
-  appDeepLink: string;
-  webLink: string;
-}
+import fs from 'fs';
+import path from 'path';
+import { RideProviderDetails, ComparisonResult } from './types';
 
-export interface ComparisonResult {
-  distanceKm: number;
-  durationMins: number;
-  providers: RideProviderDetails[];
-  recommendations: {
-    cheapest: string;
-    fastest: string;
-    bestOverall: string;
+
+// Load JSON configuration
+const configPath = path.join(__dirname, '../config/fares.json');
+let fareConfig: any;
+try {
+  fareConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+} catch (err) {
+  console.error('Failed to parse fares.json configuration, using fallback config.', err);
+  // Safe minimal fallback just in case
+  fareConfig = {
+    defaultCity: "Bangalore",
+    dynamicPricing: {
+      morningPeak: { startHour: 7, endHour: 10, multiplier: 1.4 },
+      eveningPeak: { startHour: 17, endHour: 21, multiplier: 1.5 },
+      nightCharges: { startHour: 23, endHour: 5, multiplier: 1.25 }
+    },
+    cities: {}
   };
-  insights: string[];
 }
 
-export function calculateFaresAndScores(distanceKm: number, durationMins: number, source: string, destination: string): ComparisonResult {
-  // 1. Determine a base traffic factor (speed in km/h)
-  const averageSpeed = distanceKm / (durationMins / 60);
-  let trafficSurge = 1.0;
+export function detectCity(source: string, destination: string): string {
+  const text = `${source} ${destination}`.toLowerCase();
+  if (text.includes('kochi') || text.includes('cochin') || text.includes('ernakulam')) {
+    return 'Kochi';
+  }
+  if (text.includes('chennai') || text.includes('madras')) {
+    return 'Chennai';
+  }
+  if (text.includes('hyderabad')) {
+    return 'Hyderabad';
+  }
+  if (text.includes('mumbai') || text.includes('bombay')) {
+    return 'Mumbai';
+  }
+  if (text.includes('delhi') || text.includes('noida') || text.includes('gurgaon') || text.includes('ghaziabad') || text.includes('ncr')) {
+    return 'Delhi';
+  }
+  return 'Bangalore'; // default
+}
+
+export function getSurgeMultiplier(): { multiplier: number, ruleName: string } {
+  const now = new Date();
   
-  // Severe traffic if average speed is under 15 km/h
-  if (averageSpeed < 15) {
-    trafficSurge = 1.35;
-  } else if (averageSpeed < 25) {
-    trafficSurge = 1.15;
+  // Since the user is in IST (UTC+5:30), let's ensure we evaluate based on Indian Standard Time.
+  // We can convert the server's Date to IST timezone.
+  const utcOffset = now.getTimezoneOffset() * 60000;
+  const utcTime = now.getTime() + utcOffset;
+  const istTime = new Date(utcTime + (3600000 * 5.5));
+  const currentHour = istTime.getHours();
+
+  const { dynamicPricing } = fareConfig;
+
+  // Morning Peak: 7:00 AM – 10:00 AM
+  if (currentHour >= dynamicPricing.morningPeak.startHour && currentHour < dynamicPricing.morningPeak.endHour) {
+    return { multiplier: dynamicPricing.morningPeak.multiplier, ruleName: 'Morning Peak' };
+  }
+  
+  // Evening Peak: 5:00 PM – 9:00 PM
+  if (currentHour >= dynamicPricing.eveningPeak.startHour && currentHour < dynamicPricing.eveningPeak.endHour) {
+    return { multiplier: dynamicPricing.eveningPeak.multiplier, ruleName: 'Evening Peak' };
   }
 
-  // Define booking parameters and Deep-links
+  // Night Charges: 11:00 PM – 5:00 AM
+  if (currentHour >= dynamicPricing.nightCharges.startHour || currentHour < dynamicPricing.nightCharges.endHour) {
+    return { multiplier: dynamicPricing.nightCharges.multiplier, ruleName: 'Night Charges' };
+  }
+
+  return { multiplier: 1.0, ruleName: 'Standard' };
+}
+
+export function calculateFaresAndScores(
+  distanceKm: number,
+  durationMins: number,
+  source: string,
+  destination: string,
+  osrmSuccess: boolean = true
+): ComparisonResult {
+  const city = detectCity(source, destination);
+  const cityData = fareConfig.cities[city] || fareConfig.cities[fareConfig.defaultCity];
+  
+  const { multiplier: peakMultiplier, ruleName: surgeRuleName } = getSurgeMultiplier();
+
+  // Determine Airport Toll Estimate
+  let tollEstimate = 0;
+  if (cityData.toll) {
+    const combinedText = `${source} ${destination}`.toLowerCase();
+    const isAirport = cityData.toll.airportKeywords.some((kw: string) => combinedText.includes(kw));
+    // If it's a long trip and goes to the airport, add airport toll
+    if (isAirport && distanceKm > 10) {
+      tollEstimate = cityData.toll.charge;
+    }
+  }
+
   const pickupAddr = encodeURIComponent(source);
   const dropoffAddr = encodeURIComponent(destination);
 
-  const providersConfig = [
-    {
-      name: 'Uber Go',
-      type: 'Cab' as const,
-      baseFare: 55,
-      perKmRate: 14.5,
-      perMinRate: 2.5,
-      etaMultiplier: 1.0, // Standard OSRM ETA
-      surgeBase: trafficSurge,
-      appDeepLink: `uber://?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`,
-      webLink: `https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`
-    },
-    {
-      name: 'Uber Auto',
-      type: 'Auto' as const,
-      baseFare: 35,
-      perKmRate: 10.0,
-      perMinRate: 1.5,
-      etaMultiplier: 1.05,
-      surgeBase: Math.max(1.0, trafficSurge - 0.05),
-      appDeepLink: `uber://?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`,
-      webLink: `https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`
-    },
-    {
-      name: 'Uber Moto',
-      type: 'Bike' as const,
-      baseFare: 20,
-      perKmRate: 8.0,
-      perMinRate: 1.1,
-      etaMultiplier: 0.82,
-      surgeBase: Math.max(1.0, trafficSurge * 0.92),
-      appDeepLink: `uber://?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`,
-      webLink: `https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`
-    },
-    {
-      name: 'Ola Mini',
-      type: 'Cab' as const,
-      baseFare: 50,
-      perKmRate: 15.0,
-      perMinRate: 2.2,
-      etaMultiplier: 1.1, // Extra 10% delay for driver allocation
-      surgeBase: Math.max(1.0, trafficSurge - 0.05),
-      appDeepLink: `olacabs://app/launch?pickup=my_location`,
-      webLink: `https://www.olacabs.com/`
-    },
-    {
-      name: 'Ola Auto',
-      type: 'Auto' as const,
-      baseFare: 32,
-      perKmRate: 10.5,
-      perMinRate: 1.4,
-      etaMultiplier: 1.12,
-      surgeBase: Math.max(1.0, trafficSurge - 0.08),
-      appDeepLink: `olacabs://app/launch?pickup=my_location`,
-      webLink: `https://www.olacabs.com/`
-    },
-    {
-      name: 'Ola Bike',
-      type: 'Bike' as const,
-      baseFare: 18,
-      perKmRate: 8.5,
-      perMinRate: 1.0,
-      etaMultiplier: 0.85,
-      surgeBase: Math.max(1.0, trafficSurge * 0.95),
-      appDeepLink: `olacabs://app/launch?pickup=my_location`,
-      webLink: `https://www.olacabs.com/`
-    },
-    {
-      name: 'Rapido Bike',
-      type: 'Bike' as const,
-      baseFare: 15,
-      perKmRate: 7.5,
-      perMinRate: 0.9,
-      etaMultiplier: 0.78,
-      surgeBase: Math.max(1.0, trafficSurge * 0.88),
-      appDeepLink: `rapido://booking`,
-      webLink: `https://www.rapido.bike/`
-    },
-    {
-      name: 'Rapido Auto',
-      type: 'Auto' as const,
-      baseFare: 28,
-      perKmRate: 9.8,
-      perMinRate: 1.3,
-      etaMultiplier: 1.08,
-      surgeBase: Math.max(1.0, trafficSurge - 0.07),
-      appDeepLink: `rapido://booking`,
-      webLink: `https://www.rapido.bike/`
-    },
-    {
-      name: 'Rapido Cab',
-      type: 'Cab' as const,
-      baseFare: 48,
-      perKmRate: 13.8,
-      perMinRate: 2.0,
-      etaMultiplier: 1.15,
-      surgeBase: Math.max(1.0, trafficSurge - 0.02),
-      appDeepLink: `rapido://booking`,
-      webLink: `https://www.rapido.bike/`
-    }
-  ];
+  // Compile calculations for each provider defined in the city pricing config
+  const providerKeys = Object.keys(cityData.providers);
+  let providers: RideProviderDetails[] = providerKeys.map((name) => {
+    const cfg = cityData.providers[name];
+    
+    // Exact fare formula: (baseFare + (dist * rate) + (time * rate)) * peakMultiplier + platformFee + toll
+    const dFare = distanceKm * cfg.perKmRate;
+    const tFare = durationMins * cfg.perMinRate;
+    const rawFare = (cfg.baseFare + dFare + tFare) * peakMultiplier + cfg.platformFee + tollEstimate;
+    const estimatedFare = Math.round(rawFare);
 
-  // Calculate detailed costs for each provider
-  const providers: RideProviderDetails[] = providersConfig.map(cfg => {
-    const providerDistance = distanceKm;
-    const providerEta = Math.round(durationMins * cfg.etaMultiplier);
-    
-    // Simulate dynamic real-time demand surge fluctuation (+0% to +25%)
-    const demandSurge = 1.0 + Math.random() * 0.25;
-    const finalSurge = Number((cfg.surgeBase * demandSurge).toFixed(2));
-    
-    const dFare = providerDistance * cfg.perKmRate;
-    const tFare = providerEta * cfg.perMinRate;
-    const rawTotal = (cfg.baseFare + dFare + tFare) * finalSurge;
-    const totalFare = Math.round(rawTotal);
+    // Deep link patterns
+    const appDeepLink = name.toLowerCase().includes('uber')
+      ? `uber://?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`
+      : name.toLowerCase().includes('ola')
+      ? `olacabs://app/launch?pickup=my_location`
+      : name.toLowerCase().includes('rapido')
+      ? `rapido://booking`
+      : `taxifarecompare://booking`;
+
+    const webLink = name.toLowerCase().includes('uber')
+      ? `https://m.uber.com/ul/?action=setPickup&pickup[formatted_address]=${pickupAddr}&dropoff[formatted_address]=${dropoffAddr}`
+      : name.toLowerCase().includes('ola')
+      ? `https://www.olacabs.com/`
+      : name.toLowerCase().includes('rapido')
+      ? `https://www.rapido.bike/`
+      : `https://www.google.com/search?q=local+taxi+booking+${city}`;
+
+    // Confidence Level
+    const confidence = !osrmSuccess ? 'Low' : (peakMultiplier > 1.0 ? 'Medium' : 'High');
 
     return {
-      name: cfg.name,
-      type: cfg.type,
-      distanceKm: Number(providerDistance.toFixed(1)),
-      etaMins: providerEta,
+      provider: name,
+      vehicleType: cfg.vehicleType,
+      distanceKm: Number(distanceKm.toFixed(1)),
+      etaMinutes: Math.round(durationMins),
+      estimatedFare,
+      surgeMultiplier: peakMultiplier,
+      confidence,
       baseFare: cfg.baseFare,
-      distanceFare: Number(dFare.toFixed(2)),
-      durationFare: Number(tFare.toFixed(2)),
-      surgeMultiplier: finalSurge,
-      totalFare,
-      recommendationScore: 0, // calculated below
-      appDeepLink: cfg.appDeepLink,
-      webLink: cfg.webLink
+      distanceFare: Number(dFare.toFixed(1)),
+      durationFare: Number(tFare.toFixed(1)),
+      platformFee: cfg.platformFee,
+      tollEstimate,
+      recommendationScore: 0, // Calculated below
+      appDeepLink,
+      webLink
     };
   });
 
-  // Calculate recommendation scores relative to their categories
-  const fares = providers.map(p => p.totalFare);
-  const times = providers.map(p => p.etaMins);
-  const distances = providers.map(p => p.distanceKm);
+  // Calculate recommendation scores
+  if (providers.length > 0) {
+    const fares = providers.map(p => p.estimatedFare);
+    const times = providers.map(p => p.etaMinutes);
+    const distances = providers.map(p => p.distanceKm);
 
-  const minFare = Math.min(...fares);
-  const minTime = Math.min(...times);
-  const minDistance = Math.min(...distances);
+    const minFare = Math.min(...fares);
+    const minTime = Math.min(...times);
+    const minDistance = Math.min(...distances);
 
-  // Group providers by type to find category-specific minimums
-  const cabs = providers.filter(p => p.type === 'Cab');
-  const autos = providers.filter(p => p.type === 'Auto');
-  const bikes = providers.filter(p => p.type === 'Bike');
+    // Category specific minimums
+    const cabs = providers.filter(p => p.vehicleType === 'Cab');
+    const autos = providers.filter(p => p.vehicleType === 'Auto');
+    const bikes = providers.filter(p => p.vehicleType === 'Bike');
 
-  const minFareCab = cabs.length > 0 ? Math.min(...cabs.map(c => c.totalFare)) : minFare;
-  const minTimeCab = cabs.length > 0 ? Math.min(...cabs.map(c => c.etaMins)) : minTime;
+    const minFareCab = cabs.length > 0 ? Math.min(...cabs.map(c => c.estimatedFare)) : minFare;
+    const minTimeCab = cabs.length > 0 ? Math.min(...cabs.map(c => c.etaMinutes)) : minTime;
 
-  const minFareAuto = autos.length > 0 ? Math.min(...autos.map(a => a.totalFare)) : minFare;
-  const minTimeAuto = autos.length > 0 ? Math.min(...autos.map(a => a.etaMins)) : minTime;
+    const minFareAuto = autos.length > 0 ? Math.min(...autos.map(a => a.estimatedFare)) : minFare;
+    const minTimeAuto = autos.length > 0 ? Math.min(...autos.map(a => a.etaMinutes)) : minTime;
 
-  const minFareBike = bikes.length > 0 ? Math.min(...bikes.map(b => b.totalFare)) : minFare;
-  const minTimeBike = bikes.length > 0 ? Math.min(...bikes.map(b => b.etaMins)) : minTime;
+    const minFareBike = bikes.length > 0 ? Math.min(...bikes.map(b => b.estimatedFare)) : minFare;
+    const minTimeBike = bikes.length > 0 ? Math.min(...bikes.map(b => b.etaMinutes)) : minTime;
 
-  providers.forEach(p => {
-    let typeMinFare = minFare;
-    let typeMinTime = minTime;
+    providers.forEach(p => {
+      let typeMinFare = minFare;
+      let typeMinTime = minTime;
 
-    if (p.type === 'Cab') {
-      typeMinFare = minFareCab;
-      typeMinTime = minTimeCab;
-    } else if (p.type === 'Auto') {
-      typeMinFare = minFareAuto;
-      typeMinTime = minTimeAuto;
-    } else if (p.type === 'Bike') {
-      typeMinFare = minFareBike;
-      typeMinTime = minTimeBike;
+      if (p.vehicleType === 'Cab') {
+        typeMinFare = minFareCab;
+        typeMinTime = minTimeCab;
+      } else if (p.vehicleType === 'Auto') {
+        typeMinFare = minFareAuto;
+        typeMinTime = minTimeAuto;
+      } else if (p.vehicleType === 'Bike') {
+        typeMinFare = minFareBike;
+        typeMinTime = minTimeBike;
+      }
+
+      const fareEfficiency = p.estimatedFare > 0 ? (typeMinFare / p.estimatedFare) : 1.0;
+      const timeEfficiency = p.etaMinutes > 0 ? (typeMinTime / p.etaMinutes) : 1.0;
+      const distanceEfficiency = p.distanceKm > 0 ? (minDistance / p.distanceKm) : 1.0;
+
+      const rawScore = (fareEfficiency * 45) + (timeEfficiency * 45) + (distanceEfficiency * 10);
+      p.recommendationScore = Math.round(rawScore);
+    });
+  }
+
+  // Sort providers strictly by cheapest estimated fare (ascending)
+  providers.sort((a, b) => a.estimatedFare - b.estimatedFare);
+
+  // Recommendations summary
+  const cheapest = providers.length > 0 
+    ? providers.reduce((prev, curr) => prev.estimatedFare < curr.estimatedFare ? prev : curr).provider
+    : 'None';
+    
+  const fastest = providers.length > 0 
+    ? providers.reduce((prev, curr) => prev.etaMinutes < curr.etaMinutes ? prev : curr).provider
+    : 'None';
+
+  const bestOverall = providers.length > 0 
+    ? providers.reduce((prev, curr) => prev.recommendationScore > curr.recommendationScore ? prev : curr).provider
+    : 'None';
+
+  // Dynamic Insights
+  const insights: string[] = [];
+  if (providers.length > 1) {
+    const minFareProvider = providers[0];
+    const maxFareProvider = providers[providers.length - 1];
+    
+    if (minFareProvider && maxFareProvider && minFareProvider.provider !== maxFareProvider.provider) {
+      const savings = maxFareProvider.estimatedFare - minFareProvider.estimatedFare;
+      insights.push(`Save up to ₹${savings} by choosing ${minFareProvider.provider} instead of ${maxFareProvider.provider}.`);
     }
 
-    const fareEfficiency = typeMinFare / p.totalFare;
-    const timeEfficiency = typeMinTime / p.etaMins;
-    const distanceEfficiency = minDistance / p.distanceKm;
+    const fastestProvider = providers.reduce((prev, curr) => prev.etaMinutes < curr.etaMinutes ? prev : curr);
+    const slowestProvider = providers.reduce((prev, curr) => prev.etaMinutes > curr.etaMinutes ? prev : curr);
+    
+    if (fastestProvider && slowestProvider && fastestProvider.provider !== slowestProvider.provider) {
+      const timeSaved = slowestProvider.etaMinutes - fastestProvider.etaMinutes;
+      insights.push(`${fastestProvider.provider} gets you there ${timeSaved} minutes faster than ${slowestProvider.provider}.`);
+    }
 
-    const rawScore = (fareEfficiency * 45) + (timeEfficiency * 45) + (distanceEfficiency * 10);
-    p.recommendationScore = Math.round(rawScore);
-  });
+    if (bestOverall !== 'None') {
+      insights.push(`${bestOverall} is recommended as it offers the best balance of cost, speed, and comfort.`);
+    }
 
-  // Sort or identify the recommendation outcomes
-  const cheapest = providers.reduce((prev, curr) => prev.totalFare < curr.totalFare ? prev : curr).name;
-  const fastest = providers.reduce((prev, curr) => prev.etaMins < curr.etaMins ? prev : curr).name;
-  
-  // Best overall matches the highest score
-  const bestOverall = providers.reduce((prev, curr) => prev.recommendationScore > curr.recommendationScore ? prev : curr).name;
-
-  // Generate dynamic insights
-  const insights: string[] = [];
-  
-  // Dynamic savings insight
-  const maxFare = Math.max(...fares);
-  const maxFareProvider = providers.find(p => p.totalFare === maxFare);
-  const minFareProvider = providers.find(p => p.totalFare === minFare);
-  if (minFareProvider && maxFareProvider && minFareProvider.name !== maxFareProvider.name) {
-    const savings = maxFare - minFare;
-    insights.push(`${minFareProvider.name} saves ₹${savings} compared to ${maxFareProvider.name}`);
+    if (tollEstimate > 0) {
+      insights.push(`Includes an estimated Airport Toll charge of ₹${tollEstimate} applied for ${city}.`);
+    }
   }
-
-  // Dynamic travel time insight
-  const maxTime = Math.max(...times);
-  const maxTimeProvider = providers.find(p => p.etaMins === maxTime);
-  const minTimeProvider = providers.find(p => p.etaMins === minTime);
-  if (minTimeProvider && maxTimeProvider && minTimeProvider.name !== maxTimeProvider.name) {
-    const timeSaved = maxTime - minTime;
-    insights.push(`${minTimeProvider.name} is ${timeSaved} minutes faster than ${maxTimeProvider.name}`);
-  }
-
-  // General recommendation summary
-  insights.push(`${bestOverall} offers the best balance based on price, travel duration, and route distance.`);
 
   return {
     distanceKm: Number(distanceKm.toFixed(1)),
     durationMins: Math.round(durationMins),
+    detectedCity: city,
+    surgeRuleName,
     providers,
     recommendations: {
       cheapest,
