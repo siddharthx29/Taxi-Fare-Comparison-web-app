@@ -118,7 +118,7 @@ router.get('/route', async (req, res) => {
         const sourceLabel = sourceName || 'Source Location';
         const destLabel = destName || 'Destination Location';
         // Calculate fares & recommendation scores
-        const comparison = (0, pricing_1.calculateFaresAndScores)(distanceKm, durationMins, sourceLabel, destLabel, osrmSuccess);
+        const comparison = (0, pricing_1.calculateFaresAndScores)(distanceKm, durationMins, sourceLabel, destLabel, lon1, lat1, lon2, lat2, osrmSuccess);
         // Calculate savings
         const fares = comparison.providers.map(p => p.estimatedFare);
         const maxFare = Math.max(...fares);
@@ -143,7 +143,7 @@ router.get('/route', async (req, res) => {
             durationMins,
             comparison.recommendations.cheapest,
             comparison.recommendations.fastest,
-            comparison.recommendations.bestOverall,
+            comparison.recommendations.mostEfficient,
             potentialSavings
         ];
         const dbRes = await pool_1.pool.query(queryText, values);

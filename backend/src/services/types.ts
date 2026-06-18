@@ -7,15 +7,26 @@ export interface RideProviderDetails {
   surgeMultiplier: number;
   confidence: 'High' | 'Medium' | 'Low';
   
-  // Detailed components for transparency/transient metrics
+  // Efficiency metrics
+  costPerKm: number;
+  costPerMin: number;
+  efficiencyScore: number;
+  recommendationScore: number;
+
+  // Detailed components
   baseFare: number;
   distanceFare: number;
   durationFare: number;
   platformFee: number;
   tollEstimate: number;
-  recommendationScore: number;
   appDeepLink: string;
   webLink: string;
+
+  // Visual highlights
+  isCheapest: boolean;
+  isFastest: boolean;
+  isMostEfficient: boolean;
+  isBestValue: boolean;
 }
 
 export interface ComparisonResult {
@@ -23,11 +34,18 @@ export interface ComparisonResult {
   durationMins: number;
   detectedCity: string;
   surgeRuleName: string;
+  straightLineDistance: number;
+  detourDistance: number;
   providers: RideProviderDetails[];
   recommendations: {
     cheapest: string;
     fastest: string;
-    bestOverall: string;
+    mostEfficient: string;
+    bestValue: string;
+    recommendationReason: string;
+    distanceAdvantage: string;
+    timeAdvantage: string;
+    costAdvantage: string;
   };
   insights: string[];
 }

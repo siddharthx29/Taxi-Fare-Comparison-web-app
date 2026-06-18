@@ -23,13 +23,13 @@ const fallbackFares = {
                 "charge": 120
             },
             "providers": {
-                "Uber Go": { "baseFare": 50, "perKmRate": 14.0, "perMinRate": 2.0, "platformFee": 15, "vehicleType": "Cab" },
-                "Uber Premier": { "baseFare": 70, "perKmRate": 18.0, "perMinRate": 2.5, "platformFee": 20, "vehicleType": "Cab" },
-                "Rapido Bike": { "baseFare": 15, "perKmRate": 7.0, "perMinRate": 1.0, "platformFee": 5, "vehicleType": "Bike" },
-                "Rapido Auto": { "baseFare": 28, "perKmRate": 10.0, "perMinRate": 1.5, "platformFee": 10, "vehicleType": "Auto" },
-                "Ola Mini": { "baseFare": 48, "perKmRate": 14.5, "perMinRate": 2.2, "platformFee": 15, "vehicleType": "Cab" },
-                "Ola Prime": { "baseFare": 65, "perKmRate": 17.5, "perMinRate": 2.4, "platformFee": 18, "vehicleType": "Cab" },
-                "Local Taxi": { "baseFare": 60, "perKmRate": 16.0, "perMinRate": 0.0, "platformFee": 0, "vehicleType": "Cab" }
+                "Uber Go": { "baseFare": 50, "perKmRate": 14.0, "perMinRate": 2.0, "platformFee": 15, "vehicleType": "Cab", "etaMultiplier": 1.0, "rating": 4.6 },
+                "Uber Premier": { "baseFare": 70, "perKmRate": 18.0, "perMinRate": 2.5, "platformFee": 20, "vehicleType": "Cab", "etaMultiplier": 0.95, "rating": 4.8 },
+                "Rapido Bike": { "baseFare": 15, "perKmRate": 7.0, "perMinRate": 1.0, "platformFee": 5, "vehicleType": "Bike", "etaMultiplier": 0.8, "rating": 4.4 },
+                "Rapido Auto": { "baseFare": 28, "perKmRate": 10.0, "perMinRate": 1.5, "platformFee": 10, "vehicleType": "Auto", "etaMultiplier": 1.05, "rating": 4.3 },
+                "Ola Mini": { "baseFare": 48, "perKmRate": 14.5, "perMinRate": 2.2, "platformFee": 15, "vehicleType": "Cab", "etaMultiplier": 1.05, "rating": 4.2 },
+                "Ola Prime": { "baseFare": 65, "perKmRate": 17.5, "perMinRate": 2.4, "platformFee": 18, "vehicleType": "Cab", "etaMultiplier": 1.0, "rating": 4.5 },
+                "Local Taxi": { "baseFare": 60, "perKmRate": 16.0, "perMinRate": 0.0, "platformFee": 0, "vehicleType": "Cab", "etaMultiplier": 1.3, "rating": 3.5 }
             }
         }
     }
@@ -87,8 +87,7 @@ function detectCity(source, destination) {
 }
 function getSurgeMultiplier() {
     const now = new Date();
-    // Since the user is in IST (UTC+5:30), let's ensure we evaluate based on Indian Standard Time.
-    // We can convert the server's Date to IST timezone.
+    // Convert current time to IST timezone
     const utcOffset = now.getTimezoneOffset() * 60000;
     const utcTime = now.getTime() + utcOffset;
     const istTime = new Date(utcTime + (3600000 * 5.5));
@@ -108,20 +107,32 @@ function getSurgeMultiplier() {
     }
     return { multiplier: 1.0, ruleName: 'Standard' };
 }
-function calculateFaresAndScores(distanceKm, durationMins, source, destination, osrmSuccess = true) {
+function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+function calculateFaresAndScores(distanceKm, durationMins, source, destination, startLon, startLat, endLon, endLat, osrmSuccess = true) {
     const city = detectCity(source, destination);
-    // Safe extraction to prevent undefined crashes in missing config scenarios
+    // Safe extraction to prevent undefined crashes
     let cityData = fareConfig.cities[city] || fareConfig.cities[fareConfig.defaultCity];
     if (!cityData) {
         cityData = fallbackFares.cities.Bangalore;
     }
     const { multiplier: peakMultiplier, ruleName: surgeRuleName } = getSurgeMultiplier();
+    // Straight-line vs road route calculations
+    const straightLineDistance = calculateHaversineDistance(startLat, startLon, endLat, endLon);
+    const detourDistance = Math.max(0, distanceKm - straightLineDistance);
     // Determine Airport Toll Estimate
     let tollEstimate = 0;
     if (cityData.toll) {
         const combinedText = `${source} ${destination}`.toLowerCase();
         const isAirport = cityData.toll.airportKeywords.some((kw) => combinedText.includes(kw));
-        // If it's a long trip and goes to the airport, add airport toll
         if (isAirport && distanceKm > 10) {
             tollEstimate = cityData.toll.charge;
         }
@@ -154,33 +165,43 @@ function calculateFaresAndScores(distanceKm, durationMins, source, destination, 
                     : `https://www.google.com/search?q=local+taxi+booking+${city}`;
         // Confidence Level
         const confidence = !osrmSuccess ? 'Low' : (peakMultiplier > 1.0 ? 'Medium' : 'High');
+        // Calculate dynamic ETA using provider multiplier
+        const providerEta = Math.round(durationMins * (cfg.etaMultiplier || 1.0));
+        // Unit costs
+        const costPerKm = distanceKm > 0 ? Number((estimatedFare / distanceKm).toFixed(1)) : 0;
+        const costPerMin = providerEta > 0 ? Number((estimatedFare / providerEta).toFixed(1)) : 0;
         return {
             provider: name,
             vehicleType: cfg.vehicleType,
             distanceKm: Number(distanceKm.toFixed(1)),
-            etaMinutes: Math.round(durationMins),
+            etaMinutes: providerEta,
             estimatedFare,
             surgeMultiplier: peakMultiplier,
             confidence,
+            costPerKm,
+            costPerMin,
+            efficiencyScore: 0, // Calculated below
+            recommendationScore: 0, // Calculated below
             baseFare: cfg.baseFare,
             distanceFare: Number(dFare.toFixed(1)),
             durationFare: Number(tFare.toFixed(1)),
             platformFee: cfg.platformFee,
             tollEstimate,
-            recommendationScore: 0, // Calculated below
             appDeepLink,
-            webLink
+            webLink,
+            isCheapest: false,
+            isFastest: false,
+            isMostEfficient: false,
+            isBestValue: false
         };
     });
-    // Calculate recommendation scores
+    // Perform comparisons and score rankings
     if (providers.length > 0) {
         const fares = providers.map(p => p.estimatedFare);
         const times = providers.map(p => p.etaMinutes);
-        const distances = providers.map(p => p.distanceKm);
         const minFare = Math.min(...fares);
         const minTime = Math.min(...times);
-        const minDistance = Math.min(...distances);
-        // Category specific minimums
+        // Find category specific minimums for the best value rating-inclusive score
         const cabs = providers.filter(p => p.vehicleType === 'Cab');
         const autos = providers.filter(p => p.vehicleType === 'Auto');
         const bikes = providers.filter(p => p.vehicleType === 'Bike');
@@ -205,26 +226,76 @@ function calculateFaresAndScores(distanceKm, durationMins, source, destination, 
                 typeMinFare = minFareBike;
                 typeMinTime = minTimeBike;
             }
-            const fareEfficiency = p.estimatedFare > 0 ? (typeMinFare / p.estimatedFare) : 1.0;
-            const timeEfficiency = p.etaMinutes > 0 ? (typeMinTime / p.etaMinutes) : 1.0;
-            const distanceEfficiency = p.distanceKm > 0 ? (minDistance / p.distanceKm) : 1.0;
-            const rawScore = (fareEfficiency * 45) + (timeEfficiency * 45) + (distanceEfficiency * 10);
+            const cfg = cityData.providers[p.provider];
+            const rating = cfg ? cfg.rating : 4.0;
+            // 1. Efficiency Score (40% travel time, 40% fare cost, 20% route efficiency)
+            const fareEfficiency = p.estimatedFare > 0 ? (minFare / p.estimatedFare) : 1.0;
+            const timeEfficiency = p.etaMinutes > 0 ? (minTime / p.etaMinutes) : 1.0;
+            // route efficiency = straight-line / road distance, with minor filter advantages for bikes/autos
+            const rawRouteEfficiency = distanceKm > 0 ? (straightLineDistance / distanceKm) : 1.0;
+            const routeMultiplier = p.vehicleType === 'Bike' ? 1.08 : (p.vehicleType === 'Auto' ? 1.02 : 1.0);
+            const routeEfficiencyScore = Math.min(1.0, rawRouteEfficiency * routeMultiplier);
+            const efficiencyScore = Math.round((timeEfficiency * 40) + (fareEfficiency * 40) + (routeEfficiencyScore * 20));
+            p.efficiencyScore = efficiencyScore;
+            // 2. Best Value Score (35% price, 35% time, 10% route, 20% comfort/rating)
+            const ratingEfficiency = rating / 5.0;
+            const rawScore = (fareEfficiency * 35) + (timeEfficiency * 35) + (routeEfficiencyScore * 10) + (ratingEfficiency * 20);
             p.recommendationScore = Math.round(rawScore);
+        });
+        // Mark Highlights
+        const lowestFare = Math.min(...providers.map(p => p.estimatedFare));
+        const lowestETA = Math.min(...providers.map(p => p.etaMinutes));
+        const highestEfficiency = Math.max(...providers.map(p => p.efficiencyScore));
+        const highestBestValue = Math.max(...providers.map(p => p.recommendationScore));
+        providers.forEach(p => {
+            if (p.estimatedFare === lowestFare)
+                p.isCheapest = true;
+            if (p.etaMinutes === lowestETA)
+                p.isFastest = true;
+            if (p.efficiencyScore === highestEfficiency)
+                p.isMostEfficient = true;
+            if (p.recommendationScore === highestBestValue)
+                p.isBestValue = true;
         });
     }
     // Sort providers strictly by cheapest estimated fare (ascending)
     providers.sort((a, b) => a.estimatedFare - b.estimatedFare);
     // Recommendations summary
     const cheapest = providers.length > 0
-        ? providers.reduce((prev, curr) => prev.estimatedFare < curr.estimatedFare ? prev : curr).provider
+        ? providers.find(p => p.isCheapest)?.provider || providers[0].provider
         : 'None';
     const fastest = providers.length > 0
-        ? providers.reduce((prev, curr) => prev.etaMinutes < curr.etaMinutes ? prev : curr).provider
+        ? providers.find(p => p.isFastest)?.provider || providers[0].provider
         : 'None';
-    const bestOverall = providers.length > 0
-        ? providers.reduce((prev, curr) => prev.recommendationScore > curr.recommendationScore ? prev : curr).provider
+    const mostEfficient = providers.length > 0
+        ? providers.find(p => p.isMostEfficient)?.provider || providers[0].provider
         : 'None';
-    // Dynamic Insights
+    const bestValue = providers.length > 0
+        ? providers.find(p => p.isBestValue)?.provider || providers[0].provider
+        : 'None';
+    // Calculate recommendation reason and advantages for the recommended option
+    let recommendationReason = '';
+    let distanceAdvantage = '';
+    let timeAdvantage = '';
+    let costAdvantage = '';
+    const recommended = providers.find(p => p.provider === mostEfficient) || providers[0];
+    if (recommended && providers.length > 0) {
+        const fares = providers.map(p => p.estimatedFare);
+        const times = providers.map(p => p.etaMinutes);
+        const maxFare = Math.max(...fares);
+        const slowestETA = Math.max(...times);
+        const sumFares = fares.reduce((a, b) => a + b, 0);
+        const sumTimes = times.reduce((a, b) => a + b, 0);
+        const avgFare = sumFares / providers.length;
+        const avgTime = sumTimes / providers.length;
+        const costDiff = avgFare - recommended.estimatedFare;
+        const timeDiff = avgTime - recommended.etaMinutes;
+        recommendationReason = `₹${Math.round(Math.abs(costDiff))} ${costDiff >= 0 ? 'cheaper' : 'more expensive'} than average • ${Math.round(Math.abs(timeDiff))} mins ${timeDiff >= 0 ? 'faster' : 'slower'} than alternatives • Efficiency Score: ${recommended.efficiencyScore}/100`;
+        distanceAdvantage = `Direct road route of ${recommended.distanceKm.toFixed(1)} km with a minor detour of ${detourDistance.toFixed(1)} km from straight path.`;
+        timeAdvantage = `Saves ${Math.round(slowestETA - recommended.etaMinutes)} minutes compared to the slowest transport alternative.`;
+        costAdvantage = `₹${Math.round(maxFare - recommended.estimatedFare)} saved compared to the most expensive travel option.`;
+    }
+    // Dynamic Insights list
     const insights = [];
     if (providers.length > 1) {
         const minFareProvider = providers[0];
@@ -233,14 +304,14 @@ function calculateFaresAndScores(distanceKm, durationMins, source, destination, 
             const savings = maxFareProvider.estimatedFare - minFareProvider.estimatedFare;
             insights.push(`Save up to ₹${savings} by choosing ${minFareProvider.provider} instead of ${maxFareProvider.provider}.`);
         }
-        const fastestProvider = providers.reduce((prev, curr) => prev.etaMinutes < curr.etaMinutes ? prev : curr);
+        const fastestProvider = providers.find(p => p.isFastest) || providers[0];
         const slowestProvider = providers.reduce((prev, curr) => prev.etaMinutes > curr.etaMinutes ? prev : curr);
         if (fastestProvider && slowestProvider && fastestProvider.provider !== slowestProvider.provider) {
             const timeSaved = slowestProvider.etaMinutes - fastestProvider.etaMinutes;
             insights.push(`${fastestProvider.provider} gets you there ${timeSaved} minutes faster than ${slowestProvider.provider}.`);
         }
-        if (bestOverall !== 'None') {
-            insights.push(`${bestOverall} is recommended as it offers the best balance of cost, speed, and comfort.`);
+        if (mostEfficient !== 'None') {
+            insights.push(`${mostEfficient} is selected as the most efficient provider based on combined cost, speed, and direct road routing.`);
         }
         if (tollEstimate > 0) {
             insights.push(`Includes an estimated Airport Toll charge of ₹${tollEstimate} applied for ${city}.`);
@@ -251,11 +322,18 @@ function calculateFaresAndScores(distanceKm, durationMins, source, destination, 
         durationMins: Math.round(durationMins),
         detectedCity: city,
         surgeRuleName,
+        straightLineDistance: Number(straightLineDistance.toFixed(1)),
+        detourDistance: Number(detourDistance.toFixed(1)),
         providers,
         recommendations: {
             cheapest,
             fastest,
-            bestOverall
+            mostEfficient,
+            bestValue,
+            recommendationReason,
+            distanceAdvantage,
+            timeAdvantage,
+            costAdvantage
         },
         insights
     };

@@ -147,7 +147,7 @@ router.get('/route', async (req: Request, res: Response) => {
     const destLabel = (destName as string) || 'Destination Location';
 
     // Calculate fares & recommendation scores
-    const comparison = calculateFaresAndScores(distanceKm, durationMins, sourceLabel, destLabel, osrmSuccess);
+    const comparison = calculateFaresAndScores(distanceKm, durationMins, sourceLabel, destLabel, lon1, lat1, lon2, lat2, osrmSuccess);
 
     // Calculate savings
     const fares = comparison.providers.map(p => p.estimatedFare);
@@ -175,7 +175,7 @@ router.get('/route', async (req: Request, res: Response) => {
       durationMins,
       comparison.recommendations.cheapest,
       comparison.recommendations.fastest,
-      comparison.recommendations.bestOverall,
+      comparison.recommendations.mostEfficient,
       potentialSavings
     ];
 
