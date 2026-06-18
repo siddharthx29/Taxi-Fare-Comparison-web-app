@@ -91,3 +91,5 @@ RideCompare dynamically structures deep booking redirects for mobile application
 - **Uber:** Redirects to the Uber mobile app (or web interface fallback) with coordinates pre-populated.
 - **Ola:** Activates Ola app launcher deep-link parameters.
 - **Rapido:** Boots Rapido app interface mapping.
+
+- https://taxi.teamnexterp.com/
