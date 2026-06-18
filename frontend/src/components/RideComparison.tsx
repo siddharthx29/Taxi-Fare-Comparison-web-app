@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Zap, Banknote, ArrowUpRight, TrendingUp, Info, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { Zap, Banknote, ArrowUpRight, TrendingUp, Info, ShieldCheck, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import type { RideProviderDetails, ComparisonResult } from '../../../backend/src/services/types';
 
 interface RideComparisonProps {
@@ -110,6 +110,12 @@ export const RideComparison: React.FC<RideComparisonProps> = ({ comparison, onBo
             <span>⚡ Active Surge Pricing: {surgeRuleName}</span>
           </div>
         )}
+
+        {/* Disclaimer Note */}
+        <div className="mt-3.5 pt-3 border-t border-indigo-100/60 dark:border-indigo-950/30 flex gap-2 items-start text-[10px] font-semibold text-[var(--text-secondary)] italic">
+          <AlertCircle size={12} className="text-amber-500 shrink-0 mt-0.5" />
+          <span>Disclaimer: Ride fare estimations are approximate and based on standard city-specific rate models. Actual ride pricing may differ due to traffic variations, real-time demand, tolls, and actual routes taken.</span>
+        </div>
 
         {/* Small quick metrics comparison */}
         <div className="grid grid-cols-3 gap-2 mt-4 pt-3.5 border-t border-indigo-100/80 dark:border-indigo-950/40 text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">

@@ -8,24 +8,63 @@ exports.getSurgeMultiplier = getSurgeMultiplier;
 exports.calculateFaresAndScores = calculateFaresAndScores;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
-// Load JSON configuration
-const configPath = path_1.default.join(__dirname, '../config/fares.json');
-let fareConfig;
-try {
-    fareConfig = JSON.parse(fs_1.default.readFileSync(configPath, 'utf8'));
+// Fully populated hardcoded fallback config in case JSON fails to load
+const fallbackFares = {
+    "dynamicPricing": {
+        "morningPeak": { "startHour": 7, "endHour": 10, "multiplier": 1.4 },
+        "eveningPeak": { "startHour": 17, "endHour": 21, "multiplier": 1.5 },
+        "nightCharges": { "startHour": 23, "endHour": 5, "multiplier": 1.25 }
+    },
+    "defaultCity": "Bangalore",
+    "cities": {
+        "Bangalore": {
+            "toll": {
+                "airportKeywords": ["airport", "kempegowda", "kia"],
+                "charge": 120
+            },
+            "providers": {
+                "Uber Go": { "baseFare": 50, "perKmRate": 14.0, "perMinRate": 2.0, "platformFee": 15, "vehicleType": "Cab" },
+                "Uber Premier": { "baseFare": 70, "perKmRate": 18.0, "perMinRate": 2.5, "platformFee": 20, "vehicleType": "Cab" },
+                "Rapido Bike": { "baseFare": 15, "perKmRate": 7.0, "perMinRate": 1.0, "platformFee": 5, "vehicleType": "Bike" },
+                "Rapido Auto": { "baseFare": 28, "perKmRate": 10.0, "perMinRate": 1.5, "platformFee": 10, "vehicleType": "Auto" },
+                "Ola Mini": { "baseFare": 48, "perKmRate": 14.5, "perMinRate": 2.2, "platformFee": 15, "vehicleType": "Cab" },
+                "Ola Prime": { "baseFare": 65, "perKmRate": 17.5, "perMinRate": 2.4, "platformFee": 18, "vehicleType": "Cab" },
+                "Local Taxi": { "baseFare": 60, "perKmRate": 16.0, "perMinRate": 0.0, "platformFee": 0, "vehicleType": "Cab" }
+            }
+        }
+    }
+};
+// Check multiple locations to locate the configuration file across dev, production, and Docker
+const possiblePaths = [
+    path_1.default.join(__dirname, '../config/fares.json'), // Dev: src/config/fares.json
+    path_1.default.join(__dirname, '../../src/config/fares.json'), // Production: dist/services/../../src/config/fares.json
+    path_1.default.join(process.cwd(), 'src/config/fares.json'), // Cwd-relative src/config
+    path_1.default.join(process.cwd(), 'dist/config/fares.json'), // Cwd-relative dist/config
+    path_1.default.join(process.cwd(), 'backend/src/config/fares.json'), // Root folder context
+    path_1.default.join(process.cwd(), 'backend/dist/config/fares.json')
+];
+let fareConfig = fallbackFares;
+let loaded = false;
+for (const p of possiblePaths) {
+    try {
+        if (fs_1.default.existsSync(p)) {
+            const content = fs_1.default.readFileSync(p, 'utf8');
+            const parsed = JSON.parse(content);
+            // Verify parsed config structure is valid
+            if (parsed && parsed.cities && Object.keys(parsed.cities).length > 0) {
+                fareConfig = parsed;
+                loaded = true;
+                console.log(`[Pricing Configuration] Loaded configuration file from: ${p}`);
+                break;
+            }
+        }
+    }
+    catch (err) {
+        // Continue loop
+    }
 }
-catch (err) {
-    console.error('Failed to parse fares.json configuration, using fallback config.', err);
-    // Safe minimal fallback just in case
-    fareConfig = {
-        defaultCity: "Bangalore",
-        dynamicPricing: {
-            morningPeak: { startHour: 7, endHour: 10, multiplier: 1.4 },
-            eveningPeak: { startHour: 17, endHour: 21, multiplier: 1.5 },
-            nightCharges: { startHour: 23, endHour: 5, multiplier: 1.25 }
-        },
-        cities: {}
-    };
+if (!loaded) {
+    console.warn('[Pricing Configuration] All fares.json paths failed or were empty. Using hardcoded Bangalore fallback configurations.');
 }
 function detectCity(source, destination) {
     const text = `${source} ${destination}`.toLowerCase();
@@ -71,7 +110,11 @@ function getSurgeMultiplier() {
 }
 function calculateFaresAndScores(distanceKm, durationMins, source, destination, osrmSuccess = true) {
     const city = detectCity(source, destination);
-    const cityData = fareConfig.cities[city] || fareConfig.cities[fareConfig.defaultCity];
+    // Safe extraction to prevent undefined crashes in missing config scenarios
+    let cityData = fareConfig.cities[city] || fareConfig.cities[fareConfig.defaultCity];
+    if (!cityData) {
+        cityData = fallbackFares.cities.Bangalore;
+    }
     const { multiplier: peakMultiplier, ruleName: surgeRuleName } = getSurgeMultiplier();
     // Determine Airport Toll Estimate
     let tollEstimate = 0;
